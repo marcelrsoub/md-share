@@ -1,0 +1,18 @@
+services:
+  md-share:
+    build: .
+    container_name: md-share
+    ports:
+      - "3020:3020"
+      - "3021:3021"
+    environment:
+      NODE_ENV: production
+      NOTES_DIR: /notes
+      DATA_DIR: /data
+      ADMIN_PORT: "3020"
+      PUBLIC_PORT: "3021"
+      PUBLIC_BASE_URL: http://localhost:3021
+      ADMIN_BASE_URL: http://localhost:3020
+    volumes:
+      - ./notes:/notes
+      - ./data:/data

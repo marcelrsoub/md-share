@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+.DS_Store
+coverage
+data
+notes
+*.log
+.env
+md-share.obsidian.env

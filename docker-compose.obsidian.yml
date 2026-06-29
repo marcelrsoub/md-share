@@ -1,0 +1,20 @@
+services:
+  md-share:
+    build: .
+    container_name: md-share
+    ports:
+      - "3020:3020"
+      - "3021:3021"
+    environment:
+      NODE_ENV: production
+      NOTES_DIR: /notes
+      DATA_DIR: /data
+      ADMIN_PORT: "3020"
+      PUBLIC_PORT: "3021"
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3021}
+      ADMIN_BASE_URL: ${ADMIN_BASE_URL:-http://localhost:3020}
+    volumes:
+      # Set OBSIDIAN_VAULT_PATH to the folder that contains your Obsidian vault.
+      - ${OBSIDIAN_VAULT_PATH:?Set OBSIDIAN_VAULT_PATH to your Obsidian vault path}:/notes
+      # Optional: move SQLite data and backups somewhere else on the host.
+      - ${MD_SHARE_DATA_PATH:-./data}:/data

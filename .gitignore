@@ -1,0 +1,12 @@
+node_modules
+dist
+.DS_Store
+data
+notes
+*.sqlite
+*.sqlite3
+coverage
+.vite
+*.log
+.env
+md-share.obsidian.env
