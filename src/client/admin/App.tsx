@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
+import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatBytes, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
 
@@ -405,10 +406,12 @@ export function AdminApp() {
   }
 
   async function copyLink(url: string, nextToast?: { text: string; href?: string }): Promise<void> {
-    await navigator.clipboard.writeText(url);
+    const result = await copyTextToClipboard(url);
     setToast({
       tone: 'success',
-      text: nextToast?.text ?? 'Share link copied to clipboard.',
+      text: result.copied
+        ? nextToast?.text ?? 'Share link copied to clipboard.'
+        : nextToast?.text ?? 'Share created. Clipboard access is not available here.',
       href: nextToast?.href ?? url,
     });
   }
