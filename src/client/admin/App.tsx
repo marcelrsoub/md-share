@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Ban,
   Copy,
   Download,
+  ChevronRight,
   FileText,
   Folder,
   RotateCcw,
@@ -96,42 +97,98 @@ export function buildNoteTree(notes: NoteSummary[]): TreeNode[] {
   return toNodes(root);
 }
 
-function renderTreeNodes(
-  nodes: TreeNode[],
-  selectedNoteId: string | null,
-  onSelect: (noteId: string) => void,
-) {
-  return (
-    <div className="nav-tree">
-      {nodes.map((node) =>
-        node.type === 'folder' ? (
-          <div key={node.path} className="nav-group">
-            <div className="nav-row nav-folder">
-              <span className="nav-icon">
-                <Folder />
-              </span>
-              <span className="nav-folder-name">{node.name}</span>
-            </div>
-            <div className="nav-children">{renderTreeNodes(node.children, selectedNoteId, onSelect)}</div>
+export function getFolderAncestors(relativePath: string): string[] {
+  const segments = relativePath.split('/').filter(Boolean);
+
+  if (segments.length <= 1) {
+    return [];
+  }
+
+  const ancestors: string[] = [];
+
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    ancestors.push(segments.slice(0, index + 1).join('/'));
+  }
+
+  return ancestors;
+}
+
+interface TreeNodeViewProps {
+  node: TreeNode;
+  depth: number;
+  expandedFolders: Set<string>;
+  onToggleFolder: (path: string) => void;
+  onSelect: (noteId: string) => void;
+  selectedNoteId: string | null;
+}
+
+function TreeNodeView({
+  node,
+  depth,
+  expandedFolders,
+  onToggleFolder,
+  onSelect,
+  selectedNoteId,
+}: TreeNodeViewProps) {
+  if (node.type === 'folder') {
+    const isExpanded = expandedFolders.has(node.path);
+
+    return (
+      <div className="nav-group">
+        <button
+          type="button"
+          className={`nav-row nav-folder${isExpanded ? ' is-expanded' : ''}`}
+          onClick={() => onToggleFolder(node.path)}
+          aria-expanded={isExpanded}
+          title={node.path}
+          style={{ paddingLeft: `${0.56 + depth * 0.72}rem` }}
+        >
+          <span className="nav-toggle">
+            <ChevronRight />
+          </span>
+          <span className="nav-icon">
+            <Folder />
+          </span>
+          <span className="nav-folder-name">{node.name}</span>
+          <span className="nav-row-meta muted">{node.children.length} {node.children.length === 1 ? 'item' : 'items'}</span>
+        </button>
+
+        {isExpanded ? (
+          <div className="nav-children">
+            {node.children.map((child) => (
+              <TreeNodeView
+                key={child.type === 'folder' ? child.path : child.note.id}
+                node={child}
+                depth={depth + 1}
+                expandedFolders={expandedFolders}
+                onToggleFolder={onToggleFolder}
+                onSelect={onSelect}
+                selectedNoteId={selectedNoteId}
+              />
+            ))}
           </div>
-        ) : (
-          <button
-            key={node.note.id}
-            type="button"
-            className={`nav-row nav-note${node.note.id === selectedNoteId ? ' is-selected' : ''}`}
-            onClick={() => onSelect(node.note.id)}
-          >
-            <span className="nav-icon">
-              <FileText />
-            </span>
-            <span className="nav-note-label">
-              <span className="nav-note-name">{node.note.name}</span>
-              <span className="nav-note-meta">{formatBytes(node.note.size)}</span>
-            </span>
-          </button>
-        ),
-      )}
-    </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  const isSelected = node.note.id === selectedNoteId;
+
+  return (
+    <button
+      type="button"
+      className={`nav-row nav-note${isSelected ? ' is-selected' : ''}`}
+      onClick={() => onSelect(node.note.id)}
+      title={node.note.relativePath}
+      style={{ paddingLeft: `${0.56 + depth * 0.72}rem` }}
+    >
+      <span className="nav-toggle nav-toggle-spacer" aria-hidden="true" />
+      <span className="nav-icon">
+        <FileText />
+      </span>
+      <span className="nav-note-label">{node.note.name}</span>
+      <span className="nav-row-meta nav-note-meta">{formatBytes(node.note.size)}</span>
+    </button>
   );
 }
 
@@ -146,9 +203,10 @@ export function AdminApp() {
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [loadingShares, setLoadingShares] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
-  const tree = buildNoteTree(notes);
+  const tree = useMemo(() => buildNoteTree(notes), [notes]);
   const selectedShares = shares.filter((share) => share.noteId === selectedNoteId);
 
   useEffect(() => {
@@ -254,6 +312,43 @@ export function AdminApp() {
       cancelled = true;
     };
   }, [selectedNoteId]);
+
+  useEffect(() => {
+    if (!selectedNote) {
+      return;
+    }
+
+    const ancestors = getFolderAncestors(selectedNote.relativePath);
+    if (ancestors.length === 0) {
+      return;
+    }
+
+    setExpandedFolders((current) => {
+      const next = new Set(current);
+      let changed = false;
+
+      for (const ancestor of ancestors) {
+        if (!next.has(ancestor)) {
+          next.add(ancestor);
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [selectedNote?.relativePath]);
+
+  function toggleFolder(path: string): void {
+    setExpandedFolders((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }
 
   async function createShare(): Promise<void> {
     if (!selectedNote) {
@@ -411,7 +506,19 @@ export function AdminApp() {
 
           <div className="admin-nav-scroll">
             {notes.length > 0 ? (
-              renderTreeNodes(tree, selectedNoteId, setSelectedNoteId)
+              <div className="nav-tree">
+                {tree.map((node) => (
+                  <TreeNodeView
+                    key={node.type === 'folder' ? node.path : node.note.id}
+                    node={node}
+                    depth={0}
+                    expandedFolders={expandedFolders}
+                    onToggleFolder={toggleFolder}
+                    onSelect={setSelectedNoteId}
+                    selectedNoteId={selectedNoteId}
+                  />
+                ))}
+              </div>
             ) : (
               <div className="empty-state muted">No Markdown files found.</div>
             )}
