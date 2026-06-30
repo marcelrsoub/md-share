@@ -1,4 +1,14 @@
 import { useEffect, useState } from 'react';
+import {
+  Ban,
+  Copy,
+  Download,
+  FileText,
+  Folder,
+  RotateCcw,
+  Search,
+  Share2,
+} from 'lucide-react';
 import type { NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
@@ -33,85 +43,7 @@ interface FolderBranch {
   name: string;
 }
 
-function FileIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M7 4h9l4 4v12H7z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M16 4v4h4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function FolderIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M3.75 7.75h5l1.8 1.8h9.7v8.7H3.75z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M3.75 9.55V6.75h5.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="11" cy="11" r="6.75" stroke="currentColor" strokeWidth="1.5" />
-      <path d="m16 16 4.25 4.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function RefreshIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M19.25 12a7.25 7.25 0 0 1-12.38 5.13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M4.75 12A7.25 7.25 0 0 1 17.13 6.87" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M14.75 4.75h3v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9.25 19.25h-3v-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="9" y="9" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M6.25 15.25h-.5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ExportIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 4.25v10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="m8.5 11.25 3.5 3.5 3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M5 19h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function RevokeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M18 6 6 18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path d="m6 6 12 12" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ShareIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M15.5 8.5a2.75 2.75 0 1 0-2.75-2.75A2.75 2.75 0 0 0 15.5 8.5Z" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M7 14.75A2.75 2.75 0 1 0 4.25 12 2.75 2.75 0 0 0 7 14.75Z" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M15.5 20.25a2.75 2.75 0 1 0-2.75-2.75 2.75 2.75 0 0 0 2.75 2.75Z" stroke="currentColor" strokeWidth="1.5" />
-      <path d="m9.45 10.8 3.6-2.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="m9.45 13.2 3.6 2.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function buildNoteTree(notes: NoteSummary[]): TreeNode[] {
+export function buildNoteTree(notes: NoteSummary[]): TreeNode[] {
   const root: FolderBranch = {
     folders: new Map<string, FolderBranch>(),
     notes: [],
@@ -176,11 +108,11 @@ function renderTreeNodes(
           <div key={node.path} className="nav-group">
             <div className="nav-row nav-folder">
               <span className="nav-icon">
-                <FolderIcon />
+                <Folder />
               </span>
-              <span>{node.name}</span>
+              <span className="nav-folder-name">{node.name}</span>
             </div>
-            {renderTreeNodes(node.children, selectedNoteId, onSelect)}
+            <div className="nav-children">{renderTreeNodes(node.children, selectedNoteId, onSelect)}</div>
           </div>
         ) : (
           <button
@@ -190,7 +122,7 @@ function renderTreeNodes(
             onClick={() => onSelect(node.note.id)}
           >
             <span className="nav-icon">
-              <FileIcon />
+              <FileText />
             </span>
             <span className="nav-note-label">
               <span className="nav-note-name">{node.note.name}</span>
@@ -425,7 +357,7 @@ export function AdminApp() {
       <div className="admin-topbar">
         <div className="brand-lockup">
           <span className="brand-mark">
-            <FileIcon />
+            <FileText />
           </span>
           <div>
             <div className="eyebrow">MD Share</div>
@@ -435,7 +367,7 @@ export function AdminApp() {
 
         <label className="command-search" htmlFor="search-notes">
           <span className="command-icon">
-            <SearchIcon />
+            <Search />
           </span>
           <input
             id="search-notes"
@@ -452,7 +384,7 @@ export function AdminApp() {
         </div>
 
         <button type="button" className="icon-button" onClick={() => void refreshAll()} aria-label="Refresh notes and shares">
-          <RefreshIcon />
+          <RotateCcw />
         </button>
       </div>
 
@@ -510,11 +442,11 @@ export function AdminApp() {
 
               <div className="command-actions">
                 <button type="button" className="button-primary" onClick={() => void createShare()} disabled={!selectedNote}>
-                  <ShareIcon />
+                  <Share2 />
                   <span>Create share</span>
                 </button>
                 <button type="button" className="button-ghost" onClick={() => void refreshAll()}>
-                  <RefreshIcon />
+                  <RotateCcw />
                   <span>Refresh</span>
                 </button>
               </div>
@@ -573,13 +505,13 @@ export function AdminApp() {
 
                     <div className="share-row-actions">
                       <button type="button" className="icon-button" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link">
-                        <CopyIcon />
+                        <Copy />
                       </button>
                       <button type="button" className="icon-button" onClick={() => void exportShare(share.token)} aria-label="Export note">
-                        <ExportIcon />
+                        <Download />
                       </button>
                       <button type="button" className="icon-button danger-button" onClick={() => void revokeShare(share.token)} aria-label="Revoke share">
-                        <RevokeIcon />
+                        <Ban />
                       </button>
                     </div>
                   </article>

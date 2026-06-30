@@ -5,6 +5,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
+import { CircleDot, ExternalLink, FileText, Settings2, UserRound, Users, X } from 'lucide-react';
 import type { PublicShareInfo } from '../../shared/types.js';
 import { base64ToUint8Array, uint8ArrayToBase64 } from '../shared/binary.js';
 import { setDocumentMetadata } from '../shared/document.js';
@@ -26,68 +27,6 @@ function buildWebSocketUrl(token: string): string {
 
 function isEditableShareStatus(status: PublicShareInfo['status'] | null | undefined): boolean {
   return status === 'active' || status === 'dirty';
-}
-
-function FileIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M7 4h9l4 4v12H7z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M16 4v4h4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function DotIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="12" r="4" />
-    </svg>
-  );
-}
-
-function PeopleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M9 11.25a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M16.5 10a2.25 2.25 0 1 0 0-4.5" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M4.5 18.25a4.5 4.5 0 0 1 9 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M15 18.25a3.5 3.5 0 0 1 4.5-3.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function NameIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 12a3.25 3.25 0 1 0-3.25-3.25A3.25 3.25 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M5 19a7 7 0 0 1 14 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M9.5 3.75h5l.55 2.03a7.5 7.5 0 0 1 1.92.8l2.02-1.1 3.54 3.54-1.1 2.02c.32.62.58 1.26.8 1.92l2.03.55v5l-2.03.55a7.5 7.5 0 0 1-.8 1.92l1.1 2.02-3.54 3.54-2.02-1.1c-.62.32-1.26.58-1.92.8l-.55 2.03h-5l-.55-2.03a7.5 7.5 0 0 1-1.92-.8l-2.02 1.1-3.54-3.54 1.1-2.02a7.5 7.5 0 0 1-.8-1.92l-2.03-.55v-5l2.03-.55c.22-.66.48-1.3.8-1.92l-1.1-2.02 3.54-3.54 2.02 1.1c.62-.32 1.26-.58 1.92-.8z"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinejoin="round"
-      />
-      <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
-function GithubIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 3.75a8.25 8.25 0 0 0-2.6 16.08c.41.08.56-.18.56-.4 0-.2-.01-.73-.01-1.42-2.3.5-2.79-1.1-2.79-1.1-.38-.96-.92-1.22-.92-1.22-.75-.51.06-.5.06-.5.83.06 1.27.86 1.27.86.73 1.26 1.92.9 2.39.69.07-.53.29-.9.53-1.11-1.83-.21-3.75-.92-3.75-4.09 0-.9.32-1.63.84-2.2-.08-.21-.37-1.06.08-2.2 0 0 .68-.22 2.22.84a7.7 7.7 0 0 1 4.04 0c1.54-1.06 2.22-.84 2.22-.84.45 1.14.16 1.99.08 2.2.52.57.84 1.3.84 2.2 0 3.18-1.93 3.88-3.77 4.08.3.26.57.77.57 1.55 0 1.12-.01 2.03-.01 2.31 0 .22.15.48.57.4A8.25 8.25 0 0 0 12 3.75Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
 }
 
 function EditorHost({
@@ -445,7 +384,7 @@ export function PublicApp() {
       <header className="public-topbar">
         <div className="brand-lockup">
           <span className="brand-mark">
-            <FileIcon />
+            <FileText />
           </span>
           <div className="brand-copy">
             <div className="eyebrow">MD Share</div>
@@ -455,12 +394,12 @@ export function PublicApp() {
 
         <div className="public-toolbar">
           <span className={`status-pill tone-${statusTone(currentStatus)}`}>
-            <DotIcon />
+            <CircleDot />
             <span>{shareStatusLabel(currentStatus)}</span>
           </span>
 
           <div className="presence-chip" tabIndex={0}>
-            <PeopleIcon />
+            <Users />
             <span>{participantCount}</span>
             <div className="presence-tooltip">
               <strong>Active now</strong>
@@ -475,7 +414,7 @@ export function PublicApp() {
           <span className="subtle-chip">Last export {formatTimestamp(info?.lastExportedAt ?? null)}</span>
 
           <button type="button" className="button-ghost name-chip settings-button" onClick={() => setSettingsOpen(true)}>
-            <GearIcon />
+            <Settings2 />
             <span>Settings</span>
           </button>
         </div>
@@ -497,7 +436,7 @@ export function PublicApp() {
                 <p className="muted">Pick the name collaborators will see while you edit this note.</p>
               </div>
               <button type="button" className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
-                <span aria-hidden="true">×</span>
+                <X />
               </button>
             </div>
 
@@ -506,7 +445,7 @@ export function PublicApp() {
                 <span className="muted">Your name</span>
                 <div className="mini-field settings-input">
                   <span className="inline-icon">
-                    <NameIcon />
+                    <UserRound />
                   </span>
                   <input
                     ref={nameInputRef}
@@ -525,7 +464,7 @@ export function PublicApp() {
 
               <div className="settings-links">
                 <a className="button-ghost settings-link" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
-                  <GithubIcon />
+                  <ExternalLink />
                   <span>View on GitHub</span>
                 </a>
               </div>
