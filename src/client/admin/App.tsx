@@ -8,9 +8,11 @@ import {
   Folder,
   RotateCcw,
   Search,
+  Settings2,
   Share2,
+  X,
 } from 'lucide-react';
-import type { NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
+import type { AdminConfig, NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatBytes, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
@@ -195,6 +197,7 @@ function TreeNodeView({
 export function AdminApp() {
   const [notes, setNotes] = useState<NoteSummary[]>([]);
   const [shares, setShares] = useState<ShareSummary[]>([]);
+  const [adminConfig, setAdminConfig] = useState<AdminConfig | null>(null);
   const [search, setSearch] = useState('');
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [selectedPreview, setSelectedPreview] = useState<NotePreview | null>(null);
@@ -202,8 +205,12 @@ export function AdminApp() {
   const [expiresInMinutes, setExpiresInMinutes] = useState('');
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [loadingShares, setLoadingShares] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareBaseUrlDraft, setShareBaseUrlDraft] = useState('');
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
   const tree = useMemo(() => buildNoteTree(notes), [notes]);
@@ -259,6 +266,22 @@ export function AdminApp() {
     }
   }
 
+  async function loadConfig(): Promise<void> {
+    setLoadingConfig(true);
+    try {
+      const result = await fetchJson<AdminConfig>('/api/admin/config');
+      setAdminConfig(result);
+      setShareBaseUrlDraft(result.shareBaseUrl);
+    } catch (loadError) {
+      setToast({
+        tone: 'error',
+        text: loadError instanceof Error ? loadError.message : 'Failed to load settings',
+      });
+    } finally {
+      setLoadingConfig(false);
+    }
+  }
+
   useEffect(() => {
     const handle = window.setTimeout(() => {
       void loadNotes(search);
@@ -269,6 +292,7 @@ export function AdminApp() {
   useEffect(() => {
     void loadNotes();
     void loadShares();
+    void loadConfig();
   }, []);
 
   useEffect(() => {
@@ -444,7 +468,57 @@ export function AdminApp() {
   }
 
   async function refreshAll(): Promise<void> {
-    await Promise.all([loadNotes(), loadShares()]);
+    await Promise.all([loadNotes(), loadShares(), settingsOpen ? Promise.resolve() : loadConfig()]);
+  }
+
+  function openSettings(): void {
+    if (adminConfig) {
+      setShareBaseUrlDraft(adminConfig.shareBaseUrl);
+    }
+
+    setSettingsOpen(true);
+  }
+
+  async function saveSettings(): Promise<void> {
+    if (!adminConfig) {
+      return;
+    }
+
+    setSavingConfig(true);
+    try {
+      const trimmed = shareBaseUrlDraft.trim();
+      let nextShareBaseUrl: string | null = null;
+      if (trimmed.length > 0) {
+        try {
+          const normalized = new URL(trimmed).toString();
+          nextShareBaseUrl = normalized === adminConfig.defaultShareBaseUrl ? null : normalized;
+        } catch {
+          nextShareBaseUrl = trimmed;
+        }
+      }
+      const updated = await fetchJson<AdminConfig>('/api/admin/config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ shareBaseUrl: nextShareBaseUrl }),
+      });
+      setAdminConfig(updated);
+      setShareBaseUrlDraft(updated.shareBaseUrl);
+      setSettingsOpen(false);
+      setToast({
+        tone: 'success',
+        text: 'Shared link settings updated.',
+      });
+      await loadShares();
+    } catch (saveError) {
+      setToast({
+        tone: 'error',
+        text: saveError instanceof Error ? saveError.message : 'Failed to save settings',
+      });
+    } finally {
+      setSavingConfig(false);
+    }
   }
 
   return (
@@ -476,9 +550,27 @@ export function AdminApp() {
         <div className="command-summary">
           <span>{notes.length} notes</span>
           <span>{shares.length} shares</span>
+          <span>
+            {loadingConfig
+              ? 'Loading settings...'
+              : adminConfig
+                ? adminConfig.shareBaseUrlOverride
+                  ? 'Custom share URL'
+                  : 'Default share URL'
+                : 'Settings unavailable'}
+          </span>
         </div>
 
-        <button type="button" className="icon-button" onClick={() => void refreshAll()} aria-label="Refresh notes and shares">
+        <button
+          type="button"
+          className="icon-button"
+          onClick={openSettings}
+          aria-label="Open settings"
+          disabled={loadingConfig || !adminConfig}
+        >
+          <Settings2 />
+        </button>
+        <button type="button" className="icon-button" onClick={() => void refreshAll()} aria-label="Refresh notes, shares, and settings">
           <RotateCcw />
         </button>
       </div>
@@ -491,6 +583,68 @@ export function AdminApp() {
               {toast.href}
             </a>
           ) : null}
+        </div>
+      ) : null}
+
+      {settingsOpen ? (
+        <div className="settings-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
+          <section
+            className="settings-dialog panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-settings-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="settings-dialog-header">
+              <div>
+                <div className="eyebrow">Admin settings</div>
+                <h2 id="admin-settings-title">Shared link base URL</h2>
+                <p className="muted">
+                  This URL is used to build the copied share link. Use a site root like https://share.example.com.
+                </p>
+              </div>
+              <button type="button" className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
+                <X />
+              </button>
+            </div>
+
+            <div className="settings-dialog-body">
+              <label className="settings-field">
+                <span>Shared link base URL</span>
+                <div className="mini-field settings-input">
+                  <input
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://share.example.com"
+                    value={shareBaseUrlDraft}
+                    onChange={(event) => setShareBaseUrlDraft(event.target.value)}
+                  />
+                </div>
+                <span className="muted">
+                  Default: <span className="mono">{adminConfig?.defaultShareBaseUrl ?? 'Loading...'}</span>
+                </span>
+              </label>
+            </div>
+
+            <div className="settings-dialog-footer">
+              <button
+                type="button"
+                className="button-ghost"
+                onClick={() => setShareBaseUrlDraft(adminConfig?.defaultShareBaseUrl ?? '')}
+                disabled={!adminConfig}
+              >
+                Reset to default
+              </button>
+              <button
+                type="button"
+                className="button-primary"
+                onClick={() => void saveSettings()}
+                disabled={!adminConfig || savingConfig}
+              >
+                <span>{savingConfig ? 'Saving...' : 'Save settings'}</span>
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
 

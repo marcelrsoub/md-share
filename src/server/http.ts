@@ -14,6 +14,10 @@ const createShareBodySchema = z.object({
   expiresInMinutes: z.number().int().positive().nullable().optional(),
 });
 
+const updateAdminConfigBodySchema = z.object({
+  shareBaseUrl: z.union([z.string(), z.null()]),
+});
+
 const tokenSchema = z.string().min(1);
 
 function sendHtml(res: express.Response, filePath: string, fallbackMessage: string): void {
@@ -81,10 +85,25 @@ export function createHttpServers(service: MdShareService, config: AppConfig, cl
   adminApp.get(
     '/api/admin/config',
     asyncHandler(async (_req, res) => {
-      res.json({
-        adminBaseUrl: config.adminBaseUrl,
-        publicBaseUrl: config.publicBaseUrl,
-      });
+      res.json(service.getAdminConfig());
+    }),
+  );
+
+  adminApp.put(
+    '/api/admin/config',
+    asyncHandler(async (req, res) => {
+      const bodyResult = updateAdminConfigBodySchema.safeParse(req.body);
+      if (!bodyResult.success) {
+        return jsonError(res, 400, 'Invalid admin config request');
+      }
+
+      const shareBaseUrl =
+        typeof bodyResult.data.shareBaseUrl === 'string'
+          ? bodyResult.data.shareBaseUrl.trim() || null
+          : null;
+
+      const updated = service.updateShareBaseUrl(shareBaseUrl);
+      res.json(updated);
     }),
   );
 

@@ -11,6 +11,7 @@ import {
   scanMarkdownFiles,
 } from '../shared/path-safety.js';
 import type {
+  AdminConfig,
   MarkdownFileEntry,
   NotePreview,
   NoteSummary,
@@ -29,6 +30,7 @@ const DOC_NAME = 'content';
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const EXPIRATION_SWEEP_MS = 30 * 1000;
 const PERSIST_DEBOUNCE_MS = 500;
+const SHARE_BASE_URL_SETTING_KEY = 'share_base_url';
 
 type UpdateOrigin = string | { source: 'db' | 'persist' | 'export' | 'ws'; connectionId?: string };
 
@@ -126,6 +128,19 @@ function summarizeShare(row: ShareRow, participantCount: number, publicBaseUrl: 
   };
 }
 
+function normalizeShareBaseUrl(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Shared link base URL must use http or https');
+  }
+
+  if (url.pathname !== '/' || url.search !== '' || url.hash !== '') {
+    throw new Error('Shared link base URL must point to a site root');
+  }
+
+  return url.toString();
+}
+
 function sanitizeParticipantNames(participants: Iterable<RuntimeClient>): string[] {
   const unique = new Set<string>();
   for (const participant of participants) {
@@ -174,6 +189,8 @@ export class MdShareService {
   private readonly runtimes = new Map<string, RuntimeState>();
   private readonly autosaveTimer: NodeJS.Timeout;
   private readonly expirationSweepTimer: NodeJS.Timeout;
+  private readonly defaultShareBaseUrl: string;
+  private shareBaseUrl: string;
   private isClosing = false;
 
   private constructor(
@@ -182,6 +199,8 @@ export class MdShareService {
     private readonly notesRootRealPath: string,
   ) {
     this.dbStore = new DatabaseStore(db);
+    this.defaultShareBaseUrl = normalizeShareBaseUrl(this.config.publicBaseUrl);
+    this.shareBaseUrl = this.loadShareBaseUrl();
     this.autosaveTimer = setInterval(() => {
       void this.exportDirtyShares('interval');
     }, FIVE_MINUTES_MS);
@@ -199,6 +218,47 @@ export class MdShareService {
 
     const notesRootRealPath = await fs.realpath(config.notesDir);
     return new MdShareService(config, db, notesRootRealPath);
+  }
+
+  private loadShareBaseUrl(): string {
+    const stored = this.dbStore.getSetting(SHARE_BASE_URL_SETTING_KEY);
+    if (!stored) {
+      return this.defaultShareBaseUrl;
+    }
+
+    try {
+      return normalizeShareBaseUrl(stored);
+    } catch {
+      this.dbStore.deleteSetting(SHARE_BASE_URL_SETTING_KEY);
+      return this.defaultShareBaseUrl;
+    }
+  }
+
+  private getShareBaseUrl(): string {
+    return this.shareBaseUrl;
+  }
+
+  getAdminConfig(): AdminConfig {
+    return {
+      adminBaseUrl: this.config.adminBaseUrl,
+      publicBaseUrl: this.config.publicBaseUrl,
+      defaultShareBaseUrl: this.defaultShareBaseUrl,
+      shareBaseUrl: this.getShareBaseUrl(),
+      shareBaseUrlOverride: this.getShareBaseUrl() === this.defaultShareBaseUrl ? null : this.getShareBaseUrl(),
+    };
+  }
+
+  updateShareBaseUrl(shareBaseUrl: string | null): AdminConfig {
+    if (shareBaseUrl == null) {
+      this.dbStore.deleteSetting(SHARE_BASE_URL_SETTING_KEY);
+      this.shareBaseUrl = this.defaultShareBaseUrl;
+      return this.getAdminConfig();
+    }
+
+    const normalized = normalizeShareBaseUrl(shareBaseUrl);
+    this.dbStore.setSetting(SHARE_BASE_URL_SETTING_KEY, normalized);
+    this.shareBaseUrl = normalized;
+    return this.getAdminConfig();
   }
 
   close(): void {
@@ -264,7 +324,7 @@ export class MdShareService {
       return summarizeShare(
         refreshedShare,
         this.dbStore.countParticipants(refreshedShare.token),
-        this.config.publicBaseUrl,
+        this.getShareBaseUrl(),
       );
     }
 
@@ -305,7 +365,7 @@ export class MdShareService {
     }
 
     this.createRuntime(saved);
-    return summarizeShare(saved, 0, this.config.publicBaseUrl);
+    return summarizeShare(saved, 0, this.getShareBaseUrl());
   }
 
   async listShares(): Promise<ShareSummary[]> {
@@ -315,7 +375,7 @@ export class MdShareService {
     for (const row of rows) {
       const current = await this.refreshShareFromDisk(row);
       const participantCount = this.dbStore.countParticipants(current.token);
-      refreshed.push(summarizeShare(current, participantCount, this.config.publicBaseUrl));
+      refreshed.push(summarizeShare(current, participantCount, this.getShareBaseUrl()));
     }
 
     refreshed.sort((left, right) => right.createdAt - left.createdAt);
@@ -349,7 +409,7 @@ export class MdShareService {
     }
 
     const updated = this.dbStore.getShare(token) ?? { ...row, revokedAt };
-    return summarizeShare(updated, 0, this.config.publicBaseUrl);
+    return summarizeShare(updated, 0, this.getShareBaseUrl());
   }
 
   async getPublicShareInfo(token: string): Promise<PublicShareInfo | null> {

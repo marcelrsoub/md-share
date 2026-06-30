@@ -52,3 +52,9 @@ export function rowToParticipant(row: Record<string, unknown>): ParticipantRow {
   };
 }
 
+export function rowToSetting(row: Record<string, unknown>): { key: string; value: string } {
+  return {
+    key: String(row.key),
+    value: String(row.value),
+  };
+}

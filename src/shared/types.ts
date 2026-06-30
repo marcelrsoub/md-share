@@ -31,6 +31,14 @@ export interface ShareSummary {
   shareUrl: string;
 }
 
+export interface AdminConfig {
+  adminBaseUrl: string;
+  publicBaseUrl: string;
+  defaultShareBaseUrl: string;
+  shareBaseUrl: string;
+  shareBaseUrlOverride: string | null;
+}
+
 export interface PublicShareInfo {
   token: string;
   noteName: string;

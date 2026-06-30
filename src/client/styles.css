@@ -196,6 +196,12 @@ svg {
   cursor: not-allowed;
 }
 
+.button-ghost:disabled,
+.icon-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .button-ghost,
 .icon-button,
 .presence-chip,
@@ -314,6 +320,7 @@ svg {
   gap: 12px;
   padding: 10px 12px;
   min-height: 56px;
+  flex-wrap: wrap;
 }
 
 .admin-topbar {
@@ -363,6 +370,7 @@ svg {
 .command-summary {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
   color: var(--muted);
   font-size: 0.82rem;
 }

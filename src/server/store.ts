@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { rowToParticipant, rowToShare } from './database.js';
+import { rowToParticipant, rowToSetting, rowToShare } from './database.js';
 import type { ParticipantRow, ShareRow } from '../shared/types.js';
 
 type ShareColumns = Record<string, unknown>;
@@ -14,6 +14,9 @@ export class DatabaseStore {
   private readonly upsertParticipantStatement;
   private readonly deleteParticipantStatement;
   private readonly countParticipantsStatement;
+  private readonly getSettingStatement;
+  private readonly upsertSettingStatement;
+  private readonly deleteSettingStatement;
 
   constructor(private readonly db: Database.Database) {
     this.getShareStatement = db.prepare('SELECT * FROM shares WHERE token = ? LIMIT 1');
@@ -65,6 +68,14 @@ export class DatabaseStore {
     this.deleteShareStatement = db.prepare('DELETE FROM shares WHERE token = ?');
     this.listParticipantsStatement = db.prepare('SELECT * FROM participants WHERE share_token = ? ORDER BY joined_at ASC');
     this.countParticipantsStatement = db.prepare('SELECT COUNT(*) AS count FROM participants WHERE share_token = ?');
+    this.getSettingStatement = db.prepare('SELECT * FROM settings WHERE key = ? LIMIT 1');
+    this.upsertSettingStatement = db.prepare(`
+      INSERT INTO settings (key, value)
+      VALUES (@key, @value)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value
+    `);
+    this.deleteSettingStatement = db.prepare('DELETE FROM settings WHERE key = ?');
     this.upsertParticipantStatement = db.prepare(`
       INSERT INTO participants (
         share_token,
@@ -143,6 +154,23 @@ export class DatabaseStore {
     return Number(row?.count ?? 0);
   }
 
+  getSetting(key: string): string | null {
+    const row = this.getSettingStatement.get(key) as Record<string, unknown> | undefined;
+    if (!row) {
+      return null;
+    }
+
+    return rowToSetting(row).value;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.upsertSettingStatement.run({ key, value });
+  }
+
+  deleteSetting(key: string): void {
+    this.deleteSettingStatement.run(key);
+  }
+
   upsertParticipant(participant: {
     shareToken: string;
     connectionId: string;
@@ -157,4 +185,3 @@ export class DatabaseStore {
     this.deleteParticipantStatement.run(shareToken, connectionId);
   }
 }
-

@@ -39,5 +39,9 @@ CREATE INDEX IF NOT EXISTS idx_participants_share_token ON participants(share_to
 CREATE INDEX IF NOT EXISTS idx_shares_expires_at ON shares(expires_at);
 CREATE INDEX IF NOT EXISTS idx_shares_revoked_at ON shares(revoked_at);
 CREATE INDEX IF NOT EXISTS idx_shares_note_id ON shares(note_id);
-`;
 
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`;
