@@ -5,8 +5,14 @@ import { markdown } from '@codemirror/lang-markdown';
 import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
-import { CircleDot, ExternalLink, FileText, Settings2, UserRound, Users, X } from 'lucide-react';
+import { CircleDot, ExternalLink, FileText, Settings2, UserRound } from 'lucide-react';
 import type { PublicShareInfo } from '../../shared/types.js';
+import { Badge } from '../components/ui/badge.js';
+import { Button } from '../components/ui/button.js';
+import { Card, CardContent, CardTitle } from '../components/ui/card.js';
+import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
+import { Input } from '../components/ui/input.js';
+import { Separator } from '../components/ui/separator.js';
 import { base64ToUint8Array, uint8ArrayToBase64 } from '../shared/binary.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatTimestamp, shareStatusLabel, statusTone } from '../shared/api.js';
@@ -64,26 +70,21 @@ function EditorHost({
               fontFamily: 'var(--font-sans)',
             },
             '.cm-content': {
-              minHeight: '64vh',
-              padding: '28px 32px 72px',
-              fontSize: '0.95rem',
-              lineHeight: '1.7',
-              maxWidth: '78ch',
+              minHeight: '68vh',
+              padding: '24px 24px 72px',
+              fontSize: '1rem',
+              lineHeight: '1.75',
+              maxWidth: '72ch',
               margin: '0 auto',
             },
             '.cm-focused': {
               outline: 'none',
             },
-            '.cm-line': {
-              padding: '0',
-            },
             '.cm-gutters': {
-              borderRight: 'none',
-              backgroundColor: 'transparent',
-              color: 'var(--muted)',
+              display: 'none',
             },
             '.cm-activeLineGutter': {
-              backgroundColor: 'transparent',
+              display: 'none',
             },
             '.cm-activeLine': {
               backgroundColor: 'rgba(255, 255, 255, 0.02)',
@@ -358,11 +359,13 @@ export function PublicApp() {
   if (loading) {
     return (
       <div className="app-shell">
-        <div className="hero-shell hero-shell-compact">
-          <div className="eyebrow">MD Share</div>
-          <h1>Loading share</h1>
-          <p className="muted">Validating the token and opening the collaborative note.</p>
-        </div>
+        <Card className="hero-shell hero-shell-compact">
+          <CardContent>
+            <div className="eyebrow">MD Share</div>
+            <CardTitle>Loading share</CardTitle>
+            <p className="muted">Validating the token and opening the collaborative note.</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -370,11 +373,13 @@ export function PublicApp() {
   if (error || !token) {
     return (
       <div className="app-shell">
-        <div className="hero-shell hero-shell-compact">
-          <div className="eyebrow">MD Share</div>
-          <h1>Share unavailable</h1>
-          <p className="muted">{error ?? 'Invalid or missing share token.'}</p>
-        </div>
+        <Card className="hero-shell hero-shell-compact">
+          <CardContent>
+            <div className="eyebrow">MD Share</div>
+            <CardTitle>Share unavailable</CardTitle>
+            <p className="muted">{error ?? 'Invalid or missing share token.'}</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -382,105 +387,88 @@ export function PublicApp() {
   return (
     <div className="app-shell app-shell-public">
       <header className="public-topbar">
-        <div className="brand-lockup">
-          <span className="brand-mark">
-            <FileText />
-          </span>
-          <div className="brand-copy">
-            <div className="eyebrow">MD Share</div>
-            <strong>{info?.noteName ?? 'Shared note'}</strong>
-          </div>
-        </div>
-
-        <div className="public-toolbar">
-          <span className={`status-pill tone-${statusTone(currentStatus)}`}>
-            <CircleDot />
-            <span>{shareStatusLabel(currentStatus)}</span>
-          </span>
-
-          <div className="presence-chip" tabIndex={0}>
-            <Users />
-            <span>{participantCount}</span>
-            <div className="presence-tooltip">
-              <strong>Active now</strong>
-              {participantNames.length > 0 ? (
-                participantNames.map((name) => <span key={name}>{name}</span>)
-              ) : (
-                <span>Waiting for collaborators</span>
-              )}
+        <div className="public-topbar-main">
+          <div className="brand-lockup">
+            <span className="brand-mark">
+              <FileText />
+            </span>
+            <div className="brand-copy">
+              <div className="eyebrow">MD Share</div>
+              <CardTitle>{info?.noteName ?? 'Shared note'}</CardTitle>
             </div>
           </div>
 
-          <span className="subtle-chip">Last export {formatTimestamp(info?.lastExportedAt ?? null)}</span>
+          <div className="public-toolbar">
+            <Badge variant="outline" className={`tone-${statusTone(currentStatus)}`}>
+              <CircleDot />
+              <span>{shareStatusLabel(currentStatus)}</span>
+            </Badge>
 
-          <button type="button" className="button-ghost name-chip settings-button" onClick={() => setSettingsOpen(true)}>
-            <Settings2 />
-            <span>Settings</span>
-          </button>
+            <Button variant="ghost" className="name-chip settings-button" onClick={() => setSettingsOpen(true)}>
+              <Settings2 />
+              <span>Settings</span>
+            </Button>
+          </div>
+        </div>
+
+        <div className="public-details muted">
+          <span>{participantCount > 0 ? `${participantCount} active now` : 'Waiting for collaborators'}</span>
+          <Separator orientation="vertical" />
+          <span>Last export {formatTimestamp(info?.lastExportedAt ?? null)}</span>
         </div>
       </header>
 
-      {settingsOpen ? (
-        <div className="settings-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
-          <section
-            className="settings-dialog panel"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="public-settings-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="settings-dialog-header">
-              <div>
-                <div className="eyebrow">Settings</div>
-                <h2 id="public-settings-title">Display name</h2>
-                <p className="muted">Pick the name collaborators will see while you edit this note.</p>
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <div>
+              <div className="eyebrow">Settings</div>
+              <DialogTitle id="public-settings-title">Display name</DialogTitle>
+              <DialogDescription>Pick the name collaborators will see while you edit this note.</DialogDescription>
+            </div>
+            <DialogClose />
+          </DialogHeader>
+
+          <DialogBody>
+            <label className="settings-field">
+              <span className="muted">Your name</span>
+              <div className="mini-field settings-input">
+                <span className="inline-icon">
+                  <UserRound />
+                </span>
+                <Input
+                  ref={nameInputRef}
+                  aria-label="Display name"
+                  value={nameDraft}
+                  onChange={(event) => setNameDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      applyDisplayName();
+                    }
+                  }}
+                  placeholder="Join with your name"
+                />
               </div>
-              <button type="button" className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
-                <X />
-              </button>
-            </div>
+            </label>
 
-            <div className="settings-dialog-body">
-              <label className="settings-field">
-                <span className="muted">Your name</span>
-                <div className="mini-field settings-input">
-                  <span className="inline-icon">
-                    <UserRound />
-                  </span>
-                  <input
-                    ref={nameInputRef}
-                    aria-label="Display name"
-                    value={nameDraft}
-                    onChange={(event) => setNameDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        applyDisplayName();
-                      }
-                    }}
-                    placeholder="Join with your name"
-                  />
-                </div>
-              </label>
-
-              <div className="settings-links">
-                <a className="button-ghost settings-link" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
-                  <ExternalLink />
-                  <span>View on GitHub</span>
-                </a>
-              </div>
+            <div className="settings-links">
+              <a className="button-ghost settings-link" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
+                <ExternalLink />
+                <span>View on GitHub</span>
+              </a>
             </div>
+          </DialogBody>
 
-            <div className="settings-dialog-footer">
-              <button type="button" className="button-ghost" onClick={() => setSettingsOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" className="button-primary" onClick={applyDisplayName} disabled={!nameDraft.trim()}>
-                Save name
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={applyDisplayName} disabled={!nameDraft.trim()}>
+              Save name
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <main className="public-workspace">
         <section className="editor-stage">

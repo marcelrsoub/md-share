@@ -10,12 +10,17 @@ import {
   Search,
   Settings2,
   Share2,
-  X,
 } from 'lucide-react';
 import type { AdminConfig, NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
+import { Badge } from '../components/ui/badge.js';
+import { Button } from '../components/ui/button.js';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.js';
+import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
+import { Input } from '../components/ui/input.js';
+import { Separator } from '../components/ui/separator.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
-import { fetchJson, formatBytes, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
+import { fetchJson, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
 
 interface CreateShareResponse extends ShareSummary {}
 
@@ -152,7 +157,6 @@ function TreeNodeView({
             <Folder />
           </span>
           <span className="nav-folder-name">{node.name}</span>
-          <span className="nav-row-meta muted">{node.children.length} {node.children.length === 1 ? 'item' : 'items'}</span>
         </button>
 
         {isExpanded ? (
@@ -189,7 +193,6 @@ function TreeNodeView({
         <FileText />
       </span>
       <span className="nav-note-label">{node.note.name}</span>
-      <span className="nav-row-meta nav-note-meta">{formatBytes(node.note.size)}</span>
     </button>
   );
 }
@@ -523,14 +526,14 @@ export function AdminApp() {
 
   return (
     <div className="app-shell app-shell-admin">
-      <div className="admin-topbar">
+      <Card className="admin-topbar">
         <div className="brand-lockup">
           <span className="brand-mark">
             <FileText />
           </span>
-          <div>
+          <div className="brand-copy">
             <div className="eyebrow">MD Share</div>
-            <h1>Admin</h1>
+            <CardTitle>Admin</CardTitle>
           </div>
         </div>
 
@@ -538,7 +541,7 @@ export function AdminApp() {
           <span className="command-icon">
             <Search />
           </span>
-          <input
+          <Input
             id="search-notes"
             type="search"
             value={search}
@@ -547,33 +550,13 @@ export function AdminApp() {
           />
         </label>
 
-        <div className="command-summary">
-          <span>{notes.length} notes</span>
-          <span>{shares.length} shares</span>
-          <span>
-            {loadingConfig
-              ? 'Loading settings...'
-              : adminConfig
-                ? adminConfig.shareBaseUrlOverride
-                  ? 'Custom share URL'
-                  : 'Default share URL'
-                : 'Settings unavailable'}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          className="icon-button"
-          onClick={openSettings}
-          aria-label="Open settings"
-          disabled={loadingConfig || !adminConfig}
-        >
+        <Button variant="icon" onClick={openSettings} aria-label="Open settings" disabled={loadingConfig || !adminConfig}>
           <Settings2 />
-        </button>
-        <button type="button" className="icon-button" onClick={() => void refreshAll()} aria-label="Refresh notes, shares, and settings">
+        </Button>
+        <Button variant="icon" onClick={() => void refreshAll()} aria-label="Refresh notes, shares, and settings">
           <RotateCcw />
-        </button>
-      </div>
+        </Button>
+      </Card>
 
       {toast ? (
         <div className={`admin-toast notice-banner ${toast.tone === 'error' ? 'notice-error' : 'notice-success'}`}>
@@ -586,77 +569,59 @@ export function AdminApp() {
         </div>
       ) : null}
 
-      {settingsOpen ? (
-        <div className="settings-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
-          <section
-            className="settings-dialog panel"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="admin-settings-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="settings-dialog-header">
-              <div>
-                <div className="eyebrow">Admin settings</div>
-                <h2 id="admin-settings-title">Shared link base URL</h2>
-                <p className="muted">
-                  This URL is used to build the copied share link. Use a site root like https://share.example.com.
-                </p>
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <div>
+              <div className="eyebrow">Admin settings</div>
+              <DialogTitle id="admin-settings-title">Shared link base URL</DialogTitle>
+              <DialogDescription>
+                This URL is used to build the copied share link. Use a site root like https://share.example.com.
+              </DialogDescription>
+            </div>
+            <DialogClose />
+          </DialogHeader>
+
+          <DialogBody>
+            <label className="settings-field">
+              <span>Shared link base URL</span>
+              <div className="mini-field settings-input">
+                <Input
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://share.example.com"
+                  value={shareBaseUrlDraft}
+                  onChange={(event) => setShareBaseUrlDraft(event.target.value)}
+                />
               </div>
-              <button type="button" className="icon-button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
-                <X />
-              </button>
-            </div>
+              <span className="muted">
+                Default: <span className="mono">{adminConfig?.defaultShareBaseUrl ?? 'Loading...'}</span>
+              </span>
+            </label>
+          </DialogBody>
 
-            <div className="settings-dialog-body">
-              <label className="settings-field">
-                <span>Shared link base URL</span>
-                <div className="mini-field settings-input">
-                  <input
-                    type="url"
-                    inputMode="url"
-                    placeholder="https://share.example.com"
-                    value={shareBaseUrlDraft}
-                    onChange={(event) => setShareBaseUrlDraft(event.target.value)}
-                  />
-                </div>
-                <span className="muted">
-                  Default: <span className="mono">{adminConfig?.defaultShareBaseUrl ?? 'Loading...'}</span>
-                </span>
-              </label>
-            </div>
+          <Separator />
 
-            <div className="settings-dialog-footer">
-              <button
-                type="button"
-                className="button-ghost"
-                onClick={() => setShareBaseUrlDraft(adminConfig?.defaultShareBaseUrl ?? '')}
-                disabled={!adminConfig}
-              >
-                Reset to default
-              </button>
-              <button
-                type="button"
-                className="button-primary"
-                onClick={() => void saveSettings()}
-                disabled={!adminConfig || savingConfig}
-              >
-                <span>{savingConfig ? 'Saving...' : 'Save settings'}</span>
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShareBaseUrlDraft(adminConfig?.defaultShareBaseUrl ?? '')} disabled={!adminConfig}>
+              Reset to default
+            </Button>
+            <Button onClick={() => void saveSettings()} disabled={!adminConfig || savingConfig}>
+              <span>{savingConfig ? 'Saving...' : 'Save settings'}</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="page-grid admin-layout">
-        <aside className="admin-sidebar panel panel-tight">
-          <div className="sidebar-header">
+        <Card className="admin-sidebar panel-tight">
+          <CardHeader className="sidebar-header">
             <div>
               <div className="eyebrow">Notes</div>
-              <h2>Navigator</h2>
+              <CardTitle>Navigator</CardTitle>
             </div>
             <span className="muted">{loadingNotes ? 'Refreshing...' : `${notes.length} results`}</span>
-          </div>
+          </CardHeader>
 
           <div className="admin-nav-scroll">
             {notes.length > 0 ? (
@@ -677,10 +642,10 @@ export function AdminApp() {
               <div className="empty-state muted">No Markdown files found.</div>
             )}
           </div>
-        </aside>
+        </Card>
 
         <main className="admin-main">
-          <section className="panel panel-tight command-strip">
+          <Card className="command-strip panel-tight">
             <div className="command-strip-main">
               <div className="command-selection">
                 <div className="eyebrow">Selected note</div>
@@ -690,7 +655,7 @@ export function AdminApp() {
 
               <label className="mini-field" htmlFor="expires-minutes">
                 <span>Expires</span>
-                <input
+                <Input
                   id="expires-minutes"
                   inputMode="numeric"
                   type="number"
@@ -702,78 +667,73 @@ export function AdminApp() {
               </label>
 
               <div className="command-actions">
-                <button type="button" className="button-primary" onClick={() => void createShare()} disabled={!selectedNote}>
+                <Button onClick={() => void createShare()} disabled={!selectedNote}>
                   <Share2 />
                   <span>Create share</span>
-                </button>
-                <button type="button" className="button-ghost" onClick={() => void refreshAll()}>
+                </Button>
+                <Button variant="ghost" onClick={() => void refreshAll()}>
                   <RotateCcw />
                   <span>Refresh</span>
-                </button>
+                </Button>
               </div>
             </div>
-          </section>
+          </Card>
 
           <section className="admin-preview-grid">
-            <section className="panel panel-tight preview-panel">
-              <div className="preview-head">
+            <Card className="panel-tight preview-panel">
+              <CardHeader className="preview-head">
                 <div>
                   <div className="eyebrow">Peek</div>
-                  <h2>{selectedPreview?.name ?? 'Preview'}</h2>
+                  <CardTitle>{selectedPreview?.name ?? 'Preview'}</CardTitle>
                 </div>
                 {selectedPreview ? (
                   <div className="preview-meta muted">
-                    <span>{formatBytes(selectedPreview.size)}</span>
                     <span>{formatTimestamp(selectedPreview.modifiedAt)}</span>
                   </div>
                 ) : null}
-              </div>
+              </CardHeader>
 
-              <div className="preview-sheet">
+              <CardContent className="preview-sheet">
                 {loadingPreview ? <p className="muted">Loading preview...</p> : null}
                 {!loadingPreview && selectedPreview ? (
                   <pre className="note-peek">{selectedPreview.excerpt || '# Empty note'}</pre>
                 ) : null}
                 {!loadingPreview && !selectedPreview ? <p className="muted">Select a note to preview its content.</p> : null}
-              </div>
-            </section>
+              </CardContent>
+            </Card>
 
-            <section className="panel panel-tight shares-panel">
-              <div className="preview-head">
+            <Card className="panel-tight shares-panel">
+              <CardHeader className="preview-head">
                 <div>
                   <div className="eyebrow">Shares</div>
-                  <h2>{selectedNote ? 'For this note' : 'Recent activity'}</h2>
+                  <CardTitle>{selectedNote ? 'For this note' : 'Recent activity'}</CardTitle>
                 </div>
                 <span className="muted">{loadingShares ? 'Refreshing...' : `${selectedShares.length} linked`}</span>
-              </div>
+              </CardHeader>
 
-              <div className="share-list-compact">
+              <CardContent className="share-list-compact">
                 {(selectedNote ? selectedShares : shares).map((share) => (
                   <article key={share.token} className="share-row-compact">
                     <div className="share-row-copy">
                       <div className="share-row-title">
                         <strong>{share.noteName}</strong>
-                        <span className={`status-pill tone-${statusTone(share.status)}`}>
+                        <Badge variant="outline" className={`tone-${statusTone(share.status)}`}>
                           {shareStatusLabel(share.status)}
-                        </span>
+                        </Badge>
                       </div>
                       <div className="muted mono">{shortToken(share.token)}</div>
-                      <div className="share-row-meta muted">
-                        <span>{share.participantCount} active</span>
-                        <span>Last export {formatTimestamp(share.lastExportedAt)}</span>
-                      </div>
                     </div>
 
                     <div className="share-row-actions">
-                      <button type="button" className="icon-button" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link">
+                      <Button variant="icon" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link">
                         <Copy />
-                      </button>
-                      <button type="button" className="icon-button" onClick={() => void exportShare(share.token)} aria-label="Export note">
+                      </Button>
+                      <Button variant="icon" onClick={() => void exportShare(share.token)} aria-label="Export note">
                         <Download />
-                      </button>
-                      <button type="button" className="icon-button danger-button" onClick={() => void revokeShare(share.token)} aria-label="Revoke share">
+                      </Button>
+                      <Button variant="icon" className="danger-button" onClick={() => void revokeShare(share.token)} aria-label="Revoke share">
                         <Ban />
-                      </button>
+                      </Button>
                     </div>
                   </article>
                 ))}
@@ -781,8 +741,8 @@ export function AdminApp() {
                 {(selectedNote ? selectedShares : shares).length === 0 ? (
                   <div className="empty-state muted">{selectedNote ? 'No shares for this note yet.' : 'No shares yet.'}</div>
                 ) : null}
-              </div>
-            </section>
+              </CardContent>
+            </Card>
           </section>
         </main>
       </div>
