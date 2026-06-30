@@ -14,20 +14,42 @@ import {
 import type { AdminConfig, NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
 import { Badge } from '../components/ui/badge.js';
 import { Button } from '../components/ui/button.js';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.js';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card.js';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
 import { Input } from '../components/ui/input.js';
 import { Separator } from '../components/ui/separator.js';
+import { Toaster, toast } from '../components/ui/sonner.js';
+import { MarkdownPreview } from '../components/markdown-preview.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
-import { fetchJson, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
+import { fetchJson, formatBytes, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
 
 interface CreateShareResponse extends ShareSummary {}
 
-interface ToastState {
-  tone: 'success' | 'error';
-  text: string;
-  href?: string;
+function buildAdminAssetUrl(noteId: string, sourcePath: string): string {
+  const url = new URL(`/api/admin/notes/${encodeURIComponent(noteId)}/assets`, window.location.origin);
+  url.searchParams.set('path', sourcePath);
+  return url.toString();
+}
+
+export const EXPIRY_PRESETS = [
+  { label: 'Never', value: '' },
+  { label: '30 minutes', value: '30' },
+  { label: '1 hour', value: '60' },
+  { label: '4 hours', value: '240' },
+  { label: '12 hours', value: '720' },
+  { label: '1 day', value: '1440' },
+  { label: '7 days', value: '10080' },
+] as const;
+
+export function parseExpirySelection(selection: string): number | null {
+  const trimmed = selection.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const minutes = Number.parseInt(trimmed, 10);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
 }
 
 interface FolderNode {
@@ -205,12 +227,11 @@ export function AdminApp() {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [selectedPreview, setSelectedPreview] = useState<NotePreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [expiresInMinutes, setExpiresInMinutes] = useState('');
+  const [expiresSelection, setExpiresSelection] = useState('');
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [loadingShares, setLoadingShares] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
-  const [toast, setToast] = useState<ToastState | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareBaseUrlDraft, setShareBaseUrlDraft] = useState('');
@@ -218,18 +239,6 @@ export function AdminApp() {
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
   const tree = useMemo(() => buildNoteTree(notes), [notes]);
   const selectedShares = shares.filter((share) => share.noteId === selectedNoteId);
-
-  useEffect(() => {
-    if (!toast) {
-      return;
-    }
-
-    const handle = window.setTimeout(() => {
-      setToast(null);
-    }, 4000);
-
-    return () => window.clearTimeout(handle);
-  }, [toast]);
 
   async function loadNotes(query = search): Promise<void> {
     setLoadingNotes(true);
@@ -245,10 +254,7 @@ export function AdminApp() {
         return result[0]?.id ?? null;
       });
     } catch (loadError) {
-      setToast({
-        tone: 'error',
-        text: loadError instanceof Error ? loadError.message : 'Failed to load notes',
-      });
+      toast.error(loadError instanceof Error ? loadError.message : 'Failed to load notes');
     } finally {
       setLoadingNotes(false);
     }
@@ -260,10 +266,7 @@ export function AdminApp() {
       const result = await fetchJson<ShareSummary[]>('/api/admin/shares');
       setShares(result);
     } catch (loadError) {
-      setToast({
-        tone: 'error',
-        text: loadError instanceof Error ? loadError.message : 'Failed to load shares',
-      });
+      toast.error(loadError instanceof Error ? loadError.message : 'Failed to load shares');
     } finally {
       setLoadingShares(false);
     }
@@ -276,10 +279,7 @@ export function AdminApp() {
       setAdminConfig(result);
       setShareBaseUrlDraft(result.shareBaseUrl);
     } catch (loadError) {
-      setToast({
-        tone: 'error',
-        text: loadError instanceof Error ? loadError.message : 'Failed to load settings',
-      });
+      toast.error(loadError instanceof Error ? loadError.message : 'Failed to load settings');
     } finally {
       setLoadingConfig(false);
     }
@@ -322,10 +322,7 @@ export function AdminApp() {
       })
       .catch((previewError) => {
         if (!cancelled) {
-          setToast({
-            tone: 'error',
-            text: previewError instanceof Error ? previewError.message : 'Failed to load preview',
-          });
+          toast.error(previewError instanceof Error ? previewError.message : 'Failed to load preview');
           setSelectedPreview(null);
         }
       })
@@ -379,21 +376,15 @@ export function AdminApp() {
 
   async function createShare(): Promise<void> {
     if (!selectedNote) {
-      setToast({
-        tone: 'error',
-        text: 'Select a Markdown file first.',
-      });
+      toast.error('Select a Markdown file first.');
       return;
     }
 
-    setToast(null);
-
     try {
-      const expires =
-        expiresInMinutes.trim().length > 0 ? Number.parseInt(expiresInMinutes.trim(), 10) : null;
+      const expires = parseExpirySelection(expiresSelection);
       const payload = {
         noteId: selectedNote.id,
-        expiresInMinutes: Number.isFinite(expires as number) ? expires : null,
+        expiresInMinutes: expires,
       };
       const created = await fetchJson<CreateShareResponse>('/api/admin/shares', {
         method: 'POST',
@@ -404,38 +395,26 @@ export function AdminApp() {
       });
       await copyLink(created.shareUrl, {
         text: 'Share link copied.',
-        href: created.shareUrl,
       });
       await loadShares();
     } catch (createError) {
-      setToast({
-        tone: 'error',
-        text: createError instanceof Error ? createError.message : 'Failed to create share',
-      });
+      toast.error(createError instanceof Error ? createError.message : 'Failed to create share');
     }
   }
 
   async function revokeShare(token: string): Promise<void> {
-    setToast(null);
     try {
       await fetchJson<ShareSummary>(`/api/admin/shares/${token}/revoke`, {
         method: 'POST',
       });
-      setToast({
-        tone: 'success',
-        text: `Revoked ${shortToken(token)}`,
-      });
+      toast.success(`Revoked ${shortToken(token)}`);
       await loadShares();
     } catch (revokeError) {
-      setToast({
-        tone: 'error',
-        text: revokeError instanceof Error ? revokeError.message : 'Failed to revoke share',
-      });
+      toast.error(revokeError instanceof Error ? revokeError.message : 'Failed to revoke share');
     }
   }
 
   async function exportShare(token: string): Promise<void> {
-    setToast(null);
     try {
       const result = await fetchJson<{ status: string; backupPath: string; conflictCopyPath: string | null; exportedAt: number }>(
         `/api/admin/shares/${token}/export`,
@@ -443,31 +422,25 @@ export function AdminApp() {
           method: 'POST',
         },
       );
-      setToast({
-        tone: 'success',
-        text:
-          result.status === 'conflict'
-            ? `Conflict copy written to ${result.conflictCopyPath ?? 'unknown path'}`
-            : `Exported at ${formatTimestamp(result.exportedAt)}`,
-      });
+      toast.success(
+        result.status === 'conflict'
+          ? `Conflict copy written to ${result.conflictCopyPath ?? 'unknown path'}`
+          : `Exported at ${formatTimestamp(result.exportedAt)}`,
+      );
       await loadShares();
     } catch (exportError) {
-      setToast({
-        tone: 'error',
-        text: exportError instanceof Error ? exportError.message : 'Failed to export share',
-      });
+      toast.error(exportError instanceof Error ? exportError.message : 'Failed to export share');
     }
   }
 
-  async function copyLink(url: string, nextToast?: { text: string; href?: string }): Promise<void> {
+  async function copyLink(url: string, nextToast?: { text: string }): Promise<void> {
     const result = await copyTextToClipboard(url);
-    setToast({
-      tone: 'success',
-      text: result.copied
-        ? nextToast?.text ?? 'Share link copied to clipboard.'
-        : nextToast?.text ?? 'Share created. Clipboard access is not available here.',
-      href: nextToast?.href ?? url,
-    });
+    if (result.copied) {
+      toast.success(nextToast?.text ?? 'Share link copied.');
+      return;
+    }
+
+    toast.message(nextToast?.text ?? 'Share created. Clipboard access is not available here.');
   }
 
   async function refreshAll(): Promise<void> {
@@ -509,16 +482,10 @@ export function AdminApp() {
       setAdminConfig(updated);
       setShareBaseUrlDraft(updated.shareBaseUrl);
       setSettingsOpen(false);
-      setToast({
-        tone: 'success',
-        text: 'Shared link settings updated.',
-      });
+      toast.success('Shared link settings updated.');
       await loadShares();
     } catch (saveError) {
-      setToast({
-        tone: 'error',
-        text: saveError instanceof Error ? saveError.message : 'Failed to save settings',
-      });
+      toast.error(saveError instanceof Error ? saveError.message : 'Failed to save settings');
     } finally {
       setSavingConfig(false);
     }
@@ -526,48 +493,21 @@ export function AdminApp() {
 
   return (
     <div className="app-shell app-shell-admin">
+      <Toaster position="top-right" richColors closeButton />
+
       <Card className="admin-topbar">
-        <div className="brand-lockup">
-          <span className="brand-mark">
-            <FileText />
-          </span>
-          <div className="brand-copy">
-            <div className="eyebrow">MD Share</div>
+        <CardContent className="panel-tight topbar-block">
+          <div className="topbar-copy">
             <CardTitle>Admin</CardTitle>
           </div>
-        </div>
 
-        <label className="command-search" htmlFor="search-notes">
-          <span className="command-icon">
-            <Search />
-          </span>
-          <Input
-            id="search-notes"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search files or folders"
-          />
-        </label>
-
-        <Button variant="icon" onClick={openSettings} aria-label="Open settings" disabled={loadingConfig || !adminConfig}>
-          <Settings2 />
-        </Button>
-        <Button variant="icon" onClick={() => void refreshAll()} aria-label="Refresh notes, shares, and settings">
-          <RotateCcw />
-        </Button>
+          <div className="topbar-controls">
+            <Button variant="icon" onClick={openSettings} aria-label="Open settings" disabled={loadingConfig || !adminConfig}>
+              <Settings2 />
+            </Button>
+          </div>
+        </CardContent>
       </Card>
-
-      {toast ? (
-        <div className={`admin-toast notice-banner ${toast.tone === 'error' ? 'notice-error' : 'notice-success'}`}>
-          <span>{toast.text}</span>
-          {toast.href ? (
-            <a className="toast-link mono" href={toast.href} target="_blank" rel="noreferrer">
-              {toast.href}
-            </a>
-          ) : null}
-        </div>
-      ) : null}
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent>
@@ -616,11 +556,28 @@ export function AdminApp() {
       <div className="page-grid admin-layout">
         <Card className="admin-sidebar panel-tight">
           <CardHeader className="sidebar-header">
-            <div>
-              <div className="eyebrow">Notes</div>
-              <CardTitle>Navigator</CardTitle>
+            <div className="sidebar-header-copy">
+              <CardTitle>Files</CardTitle>
+              <span className="muted">{loadingNotes ? 'Refreshing...' : `${notes.length} results`}</span>
             </div>
-            <span className="muted">{loadingNotes ? 'Refreshing...' : `${notes.length} results`}</span>
+            <div className="navigator-controls">
+              <label className="command-search" htmlFor="search-notes">
+                <span className="command-icon">
+                  <Search />
+                </span>
+                <Input
+                  id="search-notes"
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search notes"
+                />
+              </label>
+
+              <Button variant="icon" onClick={() => void refreshAll()} aria-label="Refresh notes, shares, and settings">
+                <RotateCcw />
+              </Button>
+            </div>
           </CardHeader>
 
           <div className="admin-nav-scroll">
@@ -648,22 +605,24 @@ export function AdminApp() {
           <Card className="command-strip panel-tight">
             <div className="command-strip-main">
               <div className="command-selection">
-                <div className="eyebrow">Selected note</div>
-                <strong>{selectedNote?.name ?? 'Choose a note'}</strong>
-                <span className="muted mono">{selectedNote?.relativePath ?? 'No file selected'}</span>
+                <CardTitle>{selectedNote?.name ?? 'Choose a note'}</CardTitle>
+                <CardDescription className="mono">{selectedNote?.relativePath ?? 'No file selected'}</CardDescription>
               </div>
 
-              <label className="mini-field" htmlFor="expires-minutes">
+              <label className="mini-field expires-field" htmlFor="expires-minutes">
                 <span>Expires</span>
-                <Input
+                <select
                   id="expires-minutes"
-                  inputMode="numeric"
-                  type="number"
-                  min="1"
-                  placeholder="Never"
-                  value={expiresInMinutes}
-                  onChange={(event) => setExpiresInMinutes(event.target.value)}
-                />
+                  className="ui-input expires-select"
+                  value={expiresSelection}
+                  onChange={(event) => setExpiresSelection(event.target.value)}
+                >
+                  {EXPIRY_PRESETS.map((preset) => (
+                    <option key={preset.value || 'never'} value={preset.value}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <div className="command-actions">
@@ -680,15 +639,14 @@ export function AdminApp() {
           </Card>
 
           <section className="admin-preview-grid">
-            <Card className="panel-tight preview-panel">
-              <CardHeader className="preview-head">
-                <div>
-                  <div className="eyebrow">Peek</div>
-                  <CardTitle>{selectedPreview?.name ?? 'Preview'}</CardTitle>
-                </div>
-                {selectedPreview ? (
-                  <div className="preview-meta muted">
-                    <span>{formatTimestamp(selectedPreview.modifiedAt)}</span>
+          <Card className="panel-tight preview-panel">
+            <CardHeader className="preview-head">
+              <CardTitle>Preview</CardTitle>
+              {selectedPreview ? (
+                <div className="preview-meta muted">
+                  <span>{formatTimestamp(selectedPreview.modifiedAt)}</span>
+                  <Separator orientation="vertical" />
+                  <span>{formatBytes(selectedPreview.size)}</span>
                   </div>
                 ) : null}
               </CardHeader>
@@ -696,7 +654,11 @@ export function AdminApp() {
               <CardContent className="preview-sheet">
                 {loadingPreview ? <p className="muted">Loading preview...</p> : null}
                 {!loadingPreview && selectedPreview ? (
-                  <pre className="note-peek">{selectedPreview.excerpt || '# Empty note'}</pre>
+                  <MarkdownPreview
+                    content={selectedPreview.content || selectedPreview.excerpt || ''}
+                    emptyLabel="This note is empty."
+                    resolveImageUrl={(source) => buildAdminAssetUrl(selectedPreview.id, source)}
+                  />
                 ) : null}
                 {!loadingPreview && !selectedPreview ? <p className="muted">Select a note to preview its content.</p> : null}
               </CardContent>
@@ -704,11 +666,7 @@ export function AdminApp() {
 
             <Card className="panel-tight shares-panel">
               <CardHeader className="preview-head">
-                <div>
-                  <div className="eyebrow">Shares</div>
-                  <CardTitle>{selectedNote ? 'For this note' : 'Recent activity'}</CardTitle>
-                </div>
-                <span className="muted">{loadingShares ? 'Refreshing...' : `${selectedShares.length} linked`}</span>
+                <CardTitle>{selectedNote ? `Shared Links (${selectedShares.length})` : `Shared Links (${shares.length})`}</CardTitle>
               </CardHeader>
 
               <CardContent className="share-list-compact">

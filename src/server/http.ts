@@ -19,6 +19,7 @@ const updateAdminConfigBodySchema = z.object({
 });
 
 const tokenSchema = z.string().min(1);
+const assetPathSchema = z.string().min(1);
 
 function sendHtml(res: express.Response, filePath: string, fallbackMessage: string): void {
   res.sendFile(filePath, (error) => {
@@ -133,6 +134,39 @@ export function createHttpServers(service: MdShareService, config: AppConfig, cl
     }),
   );
 
+  adminApp.get(
+    '/api/admin/notes/:noteId/assets',
+    asyncHandler(async (req, res) => {
+      const noteId = tokenSchema.safeParse(req.params.noteId);
+      if (!noteId.success) {
+        return jsonError(res, 400, 'Invalid note id');
+      }
+
+      const assetPath = typeof req.query.path === 'string' ? req.query.path : '';
+      const parsedAssetPath = assetPathSchema.safeParse(assetPath);
+      if (!parsedAssetPath.success) {
+        return jsonError(res, 400, 'Invalid asset path');
+      }
+
+      const asset = await service.resolveNoteAsset(noteId.data, parsedAssetPath.data);
+      if (!asset) {
+        return jsonError(res, 404, 'Image not found');
+      }
+
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.type(asset.contentType);
+      res.sendFile(asset.realPath, (error) => {
+        if (!error) {
+          return;
+        }
+
+        if (!res.headersSent) {
+          jsonError(res, 500, 'Failed to stream image');
+        }
+      });
+    }),
+  );
+
   adminApp.post(
     '/api/admin/shares',
     asyncHandler(async (req, res) => {
@@ -214,6 +248,39 @@ export function createHttpServers(service: MdShareService, config: AppConfig, cl
       }
 
       res.json(info);
+    }),
+  );
+
+  publicApp.get(
+    '/api/share/:token/assets',
+    asyncHandler(async (req, res) => {
+      const token = tokenSchema.safeParse(req.params.token);
+      if (!token.success) {
+        return jsonError(res, 400, 'Invalid share token');
+      }
+
+      const assetPath = typeof req.query.path === 'string' ? req.query.path : '';
+      const parsedAssetPath = assetPathSchema.safeParse(assetPath);
+      if (!parsedAssetPath.success) {
+        return jsonError(res, 400, 'Invalid asset path');
+      }
+
+      const asset = await service.resolveShareAsset(token.data, parsedAssetPath.data);
+      if (!asset) {
+        return jsonError(res, 404, 'Image not found');
+      }
+
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.type(asset.contentType);
+      res.sendFile(asset.realPath, (error) => {
+        if (!error) {
+          return;
+        }
+
+        if (!res.headersSent) {
+          jsonError(res, 500, 'Failed to stream image');
+        }
+      });
     }),
   );
 

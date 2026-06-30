@@ -4,7 +4,12 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { exportMarkdownShare, hasSourceChangedExternally } from '../src/server/export.js';
 import { hashFile, sha256Hex } from '../src/shared/hash.js';
-import { assertExistingMarkdownFile, createMarkdownConflictPath, scanMarkdownFiles } from '../src/shared/path-safety.js';
+import {
+  assertExistingMarkdownFile,
+  createMarkdownConflictPath,
+  resolveMarkdownAsset,
+  scanMarkdownFiles,
+} from '../src/shared/path-safety.js';
 import { safeAtomicWriteTextFile } from '../src/shared/file-ops.js';
 import { generateShareToken, isShareToken } from '../src/shared/token.js';
 import type { ShareRow } from '../src/shared/types.js';
@@ -112,6 +117,25 @@ describe('path safety', () => {
     await expect(assertExistingMarkdownFile(notesRoot, path.join(notesRoot, 'escape.md'))).rejects.toThrow(
       /escapes the notes root/,
     );
+  });
+
+  it('resolves only safe local image assets for markdown previews', async () => {
+    const notesRoot = await makeTempDir('md-share-assets-');
+    const sourcePath = path.join(notesRoot, 'note.md');
+    const imagePath = path.join(notesRoot, 'image.png');
+
+    await fs.writeFile(sourcePath, '# note', 'utf8');
+    await fs.writeFile(
+      imagePath,
+      Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO4X5ioAAAAASUVORK5CYII=', 'base64'),
+    );
+
+    const resolution = await resolveMarkdownAsset(notesRoot, sourcePath, 'image.png');
+    expect(resolution?.realPath).toBe(await fs.realpath(imagePath));
+    expect(resolution?.contentType).toBe('image/png');
+
+    await expect(resolveMarkdownAsset(notesRoot, sourcePath, '../escape.png')).resolves.toBeNull();
+    await expect(resolveMarkdownAsset(notesRoot, sourcePath, 'https://example.com/image.png')).resolves.toBeNull();
   });
 });
 

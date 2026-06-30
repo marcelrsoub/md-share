@@ -5,6 +5,16 @@ MD Share is a tiny self-hosted way to share one Markdown note at a time and edit
 - Admin UI: `http://localhost:3020`
 - Public editor: `http://localhost:3021`
 
+## Screenshots
+
+The admin view keeps the file tree, preview, and share controls in a single desktop layout.
+
+![Admin dashboard showing the file tree, preview, and shared links](docs/readme/admin-view.png)
+
+The public view shows live collaboration with multiple cursors and a rendered preview beside the editor.
+
+![Public collaborative editor with three collaborators and visible cursors](docs/readme/public-collaboration.png)
+
 ## Quick start
 
 Clone the repo and review the files first:

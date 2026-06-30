@@ -1,24 +1,63 @@
-import { useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { basicSetup, EditorView } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
 import * as Y from 'yjs';
-import { Awareness } from 'y-protocols/awareness';
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
-import { CircleDot, ExternalLink, FileText, Settings2, UserRound } from 'lucide-react';
+import { CircleDot, ExternalLink, Settings2, UserRound } from 'lucide-react';
 import type { PublicShareInfo } from '../../shared/types.js';
 import { Badge } from '../components/ui/badge.js';
 import { Button } from '../components/ui/button.js';
 import { Card, CardContent, CardTitle } from '../components/ui/card.js';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
 import { Input } from '../components/ui/input.js';
-import { Separator } from '../components/ui/separator.js';
+import { MarkdownPreview } from '../components/markdown-preview.js';
 import { base64ToUint8Array, uint8ArrayToBase64 } from '../shared/binary.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatTimestamp, shareStatusLabel, statusTone } from '../shared/api.js';
 
 const STORAGE_KEY = 'md-share.display-name';
+const CLIENT_ID_KEY = 'md-share.presence-id';
 const GITHUB_REPO_URL = 'https://github.com/marcelrsoub/md-share';
+const PRESENCE_PALETTE = [
+  { color: '#7c3aed', light: 'rgba(124, 58, 237, 0.22)' },
+  { color: '#0ea5e9', light: 'rgba(14, 165, 233, 0.22)' },
+  { color: '#14b8a6', light: 'rgba(20, 184, 166, 0.22)' },
+  { color: '#f59e0b', light: 'rgba(245, 158, 11, 0.22)' },
+  { color: '#ec4899', light: 'rgba(236, 72, 153, 0.22)' },
+  { color: '#22c55e', light: 'rgba(34, 197, 94, 0.22)' },
+  { color: '#f97316', light: 'rgba(249, 115, 22, 0.22)' },
+  { color: '#38bdf8', light: 'rgba(56, 189, 248, 0.22)' },
+];
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getPresenceTheme(seed: string): { color: string; colorLight: string } {
+  const theme = PRESENCE_PALETTE[hashString(seed) % PRESENCE_PALETTE.length] ?? PRESENCE_PALETTE[0]!;
+  return {
+    color: theme.color,
+    colorLight: theme.light,
+  };
+}
+
+function getPresenceId(): string {
+  const stored = window.localStorage.getItem(CLIENT_ID_KEY);
+  if (stored) {
+    return stored;
+  }
+
+  const generated = window.crypto.randomUUID();
+  window.localStorage.setItem(CLIENT_ID_KEY, generated);
+  return generated;
+}
 
 function getTokenFromPath(): string | null {
   const match = window.location.pathname.match(/^\/s\/([^/]+)$/);
@@ -35,14 +74,22 @@ function isEditableShareStatus(status: PublicShareInfo['status'] | null | undefi
   return status === 'active' || status === 'dirty';
 }
 
+function buildAssetUrl(token: string, sourcePath: string): string {
+  const url = new URL(`/api/share/${encodeURIComponent(token)}/assets`, window.location.origin);
+  url.searchParams.set('path', sourcePath);
+  return url.toString();
+}
+
 function EditorHost({
   doc,
   awareness,
   editable,
+  onContentChange,
 }: {
   doc: Y.Doc;
   awareness: Awareness;
   editable: boolean;
+  onContentChange: (content: string) => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
 
@@ -60,25 +107,30 @@ function EditorHost({
           basicSetup,
           markdown(),
           yCollab(yText, awareness),
+          EditorState.readOnly.of(!editable),
           EditorView.theme({
             '&': {
               backgroundColor: 'transparent',
               color: 'var(--text)',
+              caretColor: 'var(--accent)',
+              fontSize: '1rem',
+              lineHeight: '1.75',
             },
             '.cm-scroller': {
               padding: '0',
               fontFamily: 'var(--font-sans)',
             },
             '.cm-content': {
-              minHeight: '68vh',
-              padding: '24px 24px 72px',
-              fontSize: '1rem',
-              lineHeight: '1.75',
-              maxWidth: '72ch',
+              minHeight: '64vh',
+              padding: '22px 24px 84px',
+              maxWidth: '76ch',
               margin: '0 auto',
             },
             '.cm-focused': {
               outline: 'none',
+            },
+            '.cm-content[contenteditable="false"]': {
+              cursor: 'default',
             },
             '.cm-gutters': {
               display: 'none',
@@ -90,21 +142,51 @@ function EditorHost({
               backgroundColor: 'rgba(255, 255, 255, 0.02)',
             },
             '.cm-cursor': {
-              borderLeftColor: 'var(--text)',
+              borderLeftColor: 'var(--accent)',
             },
             '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
-              backgroundColor: 'rgba(163, 230, 255, 0.16)',
+              backgroundColor: 'rgba(124, 58, 237, 0.2)',
+            },
+            '.cm-ySelectionCaret': {
+              borderRadius: '999px 999px 999px 0',
+              minHeight: '1.5em',
+              paddingInline: '0.38rem',
+              borderWidth: '2px',
+              boxShadow: '0 0 0 1px rgba(5, 6, 8, 0.4)',
+            },
+            '.cm-ySelectionCaretDot': {
+              display: 'none',
+            },
+            '.cm-ySelectionInfo': {
+              opacity: '1',
+              transform: 'translateY(-2px)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '0.72rem',
+              letterSpacing: '0.02em',
+              borderRadius: '999px',
+              padding: '0.08rem 0.42rem',
+              boxShadow: '0 0 0 1px rgba(5, 6, 8, 0.28)',
+            },
+            '.cm-ySelection': {
+              borderRadius: '0.35rem',
             },
           }),
           EditorView.lineWrapping,
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) {
+              onContentChange(yText.toString());
+            }
+          }),
         ],
       }),
     });
 
+    onContentChange(yText.toString());
+
     return () => {
       view.destroy();
     };
-  }, [awareness, doc]);
+  }, [awareness, doc, editable, onContentChange]);
 
   return (
     <div className={`editor-host editor-host-public${editable ? '' : ' is-readonly'}`}>
@@ -125,9 +207,13 @@ export function PublicApp() {
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'closed'>('idle');
   const [participantNames, setParticipantNames] = useState<string[]>([]);
   const [currentStatus, setCurrentStatus] = useState<'active' | 'dirty' | 'conflict' | 'expired' | 'revoked'>('active');
+  const [editorText, setEditorText] = useState('');
   const docRef = useState(() => new Y.Doc())[0];
   const awarenessRef = useState(() => new Awareness(docRef))[0];
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const clientId = useState(() => getPresenceId())[0];
+  const deferredEditorText = useDeferredValue(editorText);
+  const presenceTheme = useMemo(() => getPresenceTheme(clientId), [clientId]);
 
   useEffect(() => {
     if (!token) {
@@ -202,9 +288,10 @@ export function PublicApp() {
     window.localStorage.setItem(STORAGE_KEY, displayName);
     awarenessRef.setLocalStateField('user', {
       name: displayName,
-      color: '#8fd3ff',
+      color: presenceTheme.color,
+      colorLight: presenceTheme.colorLight,
     });
-  }, [awarenessRef, displayName]);
+  }, [awarenessRef, displayName, presenceTheme.color, presenceTheme.colorLight]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -240,22 +327,72 @@ export function PublicApp() {
 
     const socket = new WebSocket(buildWebSocketUrl(token));
     setConnectionState('connecting');
+    const pendingUpdates: string[] = [];
+    const pendingAwarenessUpdates: string[] = [];
 
     const handleUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin && typeof origin === 'object' && (origin as { source?: string }).source === 'server') {
         return;
       }
 
+      const payload = JSON.stringify({ type: 'update', update: uint8ArrayToBase64(update) });
       if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'update', update: uint8ArrayToBase64(update) }));
+        socket.send(payload);
+        return;
       }
+
+      pendingUpdates.push(payload);
+    };
+
+    const handleAwarenessUpdate = (
+      { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
+      origin: unknown,
+    ) => {
+      if (origin && typeof origin === 'object' && (origin as { source?: string }).source === 'server') {
+        return;
+      }
+
+      const changed = [...added, ...updated, ...removed];
+      if (changed.length === 0) {
+        return;
+      }
+
+      const payload = JSON.stringify({
+        type: 'awareness',
+        update: uint8ArrayToBase64(encodeAwarenessUpdate(awarenessRef, changed)),
+      });
+
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(payload);
+        return;
+      }
+
+      pendingAwarenessUpdates.push(payload);
     };
 
     docRef.on('update', handleUpdate);
+    awarenessRef.on('update', handleAwarenessUpdate);
 
     socket.addEventListener('open', () => {
       setConnectionState('connected');
-      socket.send(JSON.stringify({ type: 'hello', displayName }));
+      socket.send(JSON.stringify({ type: 'hello', displayName, clientId: awarenessRef.clientID }));
+      const awarenessPayload = JSON.stringify({
+        type: 'awareness',
+        update: uint8ArrayToBase64(encodeAwarenessUpdate(awarenessRef, [awarenessRef.clientID])),
+      });
+      socket.send(awarenessPayload);
+      while (pendingUpdates.length > 0 && socket.readyState === WebSocket.OPEN) {
+        const payload = pendingUpdates.shift();
+        if (payload) {
+          socket.send(payload);
+        }
+      }
+      while (pendingAwarenessUpdates.length > 0 && socket.readyState === WebSocket.OPEN) {
+        const payload = pendingAwarenessUpdates.shift();
+        if (payload) {
+          socket.send(payload);
+        }
+      }
     });
 
     socket.addEventListener('message', (event) => {
@@ -274,6 +411,13 @@ export function PublicApp() {
         const updateBase64 = String(payload.update ?? '');
         if (updateBase64) {
           Y.applyUpdate(docRef, base64ToUint8Array(updateBase64), { source: 'server' });
+        }
+      }
+
+      if (payload.type === 'snapshot' || payload.type === 'awareness') {
+        const awarenessBase64 = String(payload.awareness ?? payload.update ?? '');
+        if (awarenessBase64) {
+          applyAwarenessUpdate(awarenessRef, base64ToUint8Array(awarenessBase64), { source: 'server' });
         }
       }
 
@@ -337,9 +481,10 @@ export function PublicApp() {
 
     return () => {
       docRef.off('update', handleUpdate);
+      awarenessRef.off('update', handleAwarenessUpdate);
       socket.close();
     };
-  }, [displayName, docRef, info?.status, token]);
+  }, [awarenessRef, displayName, docRef, info?.status, token]);
 
   function applyDisplayName(): void {
     const nextName = nameDraft.trim();
@@ -353,9 +498,7 @@ export function PublicApp() {
     window.localStorage.setItem(STORAGE_KEY, nextName);
   }
 
-  const editable = isEditableShareStatus(currentStatus) && connectionState === 'connected';
-  const participantCount = participantNames.length;
-
+  const editable = isEditableShareStatus(currentStatus) && Boolean(displayName);
   if (loading) {
     return (
       <div className="app-shell">
@@ -386,36 +529,28 @@ export function PublicApp() {
 
   return (
     <div className="app-shell app-shell-public">
-      <header className="public-topbar">
-        <div className="public-topbar-main">
-          <div className="brand-lockup">
-            <span className="brand-mark">
-              <FileText />
-            </span>
-            <div className="brand-copy">
-              <div className="eyebrow">MD Share</div>
-              <CardTitle>{info?.noteName ?? 'Shared note'}</CardTitle>
-            </div>
+      <header className="public-topbar panel">
+        <CardContent className="panel-tight topbar-block">
+          <div className="topbar-copy">
+            <CardTitle>{info?.noteName ?? 'Shared note'}</CardTitle>
           </div>
 
-          <div className="public-toolbar">
+          <div className="topbar-controls">
             <Badge variant="outline" className={`tone-${statusTone(currentStatus)}`}>
               <CircleDot />
               <span>{shareStatusLabel(currentStatus)}</span>
             </Badge>
 
-            <Button variant="ghost" className="name-chip settings-button" onClick={() => setSettingsOpen(true)}>
+            <Button
+              variant="icon"
+              className="name-chip settings-button"
+              aria-label="Open settings"
+              onClick={() => setSettingsOpen(true)}
+            >
               <Settings2 />
-              <span>Settings</span>
             </Button>
           </div>
-        </div>
-
-        <div className="public-details muted">
-          <span>{participantCount > 0 ? `${participantCount} active now` : 'Waiting for collaborators'}</span>
-          <Separator orientation="vertical" />
-          <span>Last export {formatTimestamp(info?.lastExportedAt ?? null)}</span>
-        </div>
+        </CardContent>
       </header>
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
@@ -471,12 +606,36 @@ export function PublicApp() {
       </Dialog>
 
       <main className="public-workspace">
-        <section className="editor-stage">
-          <EditorHost doc={docRef} awareness={awarenessRef} editable={editable} />
-          {!displayName ? (
-            <div className="editor-empty-hint muted">Open settings to add your name and join the live session.</div>
-          ) : null}
+        <section className="workspace-panel public-editor-panel panel">
+          <div className="workspace-panel-header">
+            <CardTitle>Editor</CardTitle>
+            <span className="muted">{connectionState === 'connected' ? 'Synced' : connectionState}</span>
+          </div>
+
+          <EditorHost
+            doc={docRef}
+            awareness={awarenessRef}
+            editable={editable}
+            onContentChange={setEditorText}
+          />
+
+          {!displayName ? <div className="editor-empty-hint muted">Open settings to add your name and join the live session.</div> : null}
         </section>
+
+        <aside className="workspace-panel public-preview-panel panel">
+          <div className="workspace-panel-header">
+            <CardTitle>Preview</CardTitle>
+            <span className="muted">Updates as you type</span>
+          </div>
+
+          <div className="preview-surface">
+            <MarkdownPreview
+              content={deferredEditorText}
+              emptyLabel="Start typing to generate the rendered note."
+              resolveImageUrl={(source) => buildAssetUrl(token, source)}
+            />
+          </div>
+        </aside>
       </main>
     </div>
   );

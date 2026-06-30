@@ -3,6 +3,24 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import type { MarkdownFileEntry } from './types.js';
 
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.gif': 'image/gif',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
+
+export interface MarkdownAssetResolution {
+  realPath: string;
+  contentType: string;
+  size: number;
+}
+
 function normalizeQuery(query: string): string {
   return query.trim().toLowerCase();
 }
@@ -23,6 +41,22 @@ function isInsideRoot(rootRealPath: string, candidateRealPath: string): boolean 
 
 function fileIdFromRealPath(realPath: string): string {
   return createHash('sha256').update(realPath).digest('hex');
+}
+
+function isImagePath(filePath: string): boolean {
+  return Boolean(IMAGE_MIME_TYPES[path.extname(filePath).toLowerCase()]);
+}
+
+function imageMimeType(filePath: string): string | null {
+  return IMAGE_MIME_TYPES[path.extname(filePath).toLowerCase()] ?? null;
+}
+
+function normalizeMarkdownAssetPath(assetPath: string): string {
+  return assetPath.trim().split(/[?#]/, 1)[0].trim();
+}
+
+function isPotentialUrl(value: string): boolean {
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) || value.startsWith('//');
 }
 
 async function walkMarkdownFiles(
@@ -139,6 +173,45 @@ export async function assertWritableMarkdownTarget(notesRoot: string, targetPath
   if (!isMarkdownPath(absolutePath)) {
     throw new Error('Only .md files can be written');
   }
+}
+
+export async function resolveMarkdownAsset(
+  notesRoot: string,
+  sourcePath: string,
+  assetPath: string,
+): Promise<MarkdownAssetResolution | null> {
+  const normalizedAssetPath = normalizeMarkdownAssetPath(assetPath);
+  if (!normalizedAssetPath || normalizedAssetPath.includes('\0') || isPotentialUrl(normalizedAssetPath)) {
+    return null;
+  }
+
+  const rootRealPath = await fs.realpath(notesRoot);
+  const sourceRealPath = await fs.realpath(sourcePath).catch(() => null);
+  if (!sourceRealPath || !isInsideRoot(rootRealPath, sourceRealPath)) {
+    return null;
+  }
+
+  const absolutePath = path.resolve(path.dirname(sourceRealPath), normalizedAssetPath);
+  const realPath = await fs.realpath(absolutePath).catch(() => null);
+  if (!realPath || !isInsideRoot(rootRealPath, realPath)) {
+    return null;
+  }
+
+  const stat = await fs.stat(realPath).catch(() => null);
+  if (!stat || !stat.isFile() || stat.size > MAX_IMAGE_BYTES || !isImagePath(realPath)) {
+    return null;
+  }
+
+  const contentType = imageMimeType(realPath);
+  if (!contentType) {
+    return null;
+  }
+
+  return {
+    realPath,
+    contentType,
+    size: stat.size,
+  };
 }
 
 export function createMarkdownConflictPath(sourcePath: string, timestamp = new Date()): string {

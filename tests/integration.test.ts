@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs';
 import { once } from 'node:events';
 import { WebSocket, type RawData } from 'ws';
 import * as Y from 'yjs';
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import { loadConfig } from '../src/server/config.js';
 import { openDatabase } from '../src/server/database.js';
 import { createHttpServers } from '../src/server/http.js';
@@ -80,7 +81,12 @@ describe('md-share integration', () => {
     const notesDir = await makeTempDir('md-share-int-notes-');
     const dataDir = await makeTempDir('md-share-int-data-');
     const sourcePath = path.join(notesDir, 'shared-note.md');
-    await fs.writeFile(sourcePath, 'Hello from MD Share\n', 'utf8');
+    const imagePath = path.join(notesDir, 'cover.png');
+    await fs.writeFile(
+      imagePath,
+      Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO4X5ioAAAAASUVORK5CYII=', 'base64'),
+    );
+    await fs.writeFile(sourcePath, '# Shared note\n\nHello from MD Share\n\n![Cover](cover.png)\n', 'utf8');
 
     const adminPort = 0;
     const publicPort = 0;
@@ -116,9 +122,10 @@ describe('md-share integration', () => {
 
       const previewResponse = await fetch(`${adminBase}/api/admin/notes/${notes[0]?.id}/preview`);
       expect(previewResponse.ok).toBe(true);
-      const preview = (await previewResponse.json()) as { excerpt: string; relativePath: string };
+      const preview = (await previewResponse.json()) as { excerpt: string; relativePath: string; content: string };
       expect(preview.relativePath).toBe('shared-note.md');
       expect(preview.excerpt).toContain('Hello from MD Share');
+      expect(preview.content).toContain('![Cover](cover.png)');
 
       const createResponse = await fetch(`${adminBase}/api/admin/shares`, {
         method: 'POST',
@@ -129,6 +136,10 @@ describe('md-share integration', () => {
       const share = (await createResponse.json()) as ShareSummary;
       expect(share.status).toBe('active');
       expect(share.shareUrl).toContain('/s/');
+
+      const imageResponse = await fetch(`${publicBase}/api/share/${share.token}/assets?path=${encodeURIComponent('cover.png')}`);
+      expect(imageResponse.ok).toBe(true);
+      expect(imageResponse.headers.get('content-type')).toContain('image/png');
 
       const duplicateCreateResponse = await fetch(`${adminBase}/api/admin/shares`, {
         method: 'POST',
@@ -173,6 +184,37 @@ describe('md-share integration', () => {
       socket2.send(JSON.stringify({ type: 'hello', displayName: 'Bob' }));
 
       await Promise.all([aliceState, bobState]);
+
+      const aliceAwarenessDoc = new Y.Doc();
+      const aliceAwareness = new Awareness(aliceAwarenessDoc);
+      aliceAwareness.setLocalState({
+        user: {
+          name: 'Alice',
+          color: '#ff4d6d',
+          colorLight: 'rgba(255, 77, 109, 0.24)',
+        },
+        cursor: {
+          anchor: { type: 'relative-position', tname: null, item: null, assoc: 0 },
+          head: { type: 'relative-position', tname: null, item: null, assoc: 0 },
+        },
+      });
+
+      const awarenessMessage = waitForMessage(socket2, (payload) => payload.type === 'awareness');
+      socket1.send(
+        JSON.stringify({
+          type: 'awareness',
+          update: Buffer.from(encodeAwarenessUpdate(aliceAwareness, [aliceAwareness.clientID])).toString('base64'),
+        }),
+      );
+
+      const receivedAwareness = await awarenessMessage;
+      const bobAwarenessDoc = new Y.Doc();
+      const bobAwareness = new Awareness(bobAwarenessDoc);
+      applyAwarenessUpdate(bobAwareness, Buffer.from(receivedAwareness.update, 'base64'), 'test');
+      const aliceStateEntry = Array.from(bobAwareness.getStates().values()).find(
+        (state) => state?.user?.name === 'Alice',
+      );
+      expect(aliceStateEntry?.user?.color).toBe('#ff4d6d');
 
       const baseDoc = new Y.Doc();
       baseDoc.getText('content').insert(0, 'Hello from MD Share\n');

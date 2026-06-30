@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildNoteTree, getFolderAncestors } from './App.js';
+import { buildNoteTree, getFolderAncestors, parseExpirySelection } from './App.js';
 import type { NoteSummary } from '../../shared/types.js';
 
 function makeNote(overrides: Partial<NoteSummary>): NoteSummary {
@@ -62,5 +62,22 @@ describe('buildNoteTree', () => {
       type: 'note',
       note: expect.objectContaining({ id: '4', relativePath: 'root.md' }),
     });
+  });
+});
+
+describe('parseExpirySelection', () => {
+  it('returns null for never or empty selections', () => {
+    expect(parseExpirySelection('')).toBeNull();
+    expect(parseExpirySelection('   ')).toBeNull();
+  });
+
+  it('parses preset minute values', () => {
+    expect(parseExpirySelection('30')).toBe(30);
+    expect(parseExpirySelection('1440')).toBe(1440);
+  });
+
+  it('rejects invalid values', () => {
+    expect(parseExpirySelection('0')).toBeNull();
+    expect(parseExpirySelection('abc')).toBeNull();
   });
 });

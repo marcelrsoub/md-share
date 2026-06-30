@@ -10,3 +10,4 @@ coverage
 *.log
 .env
 md-share.obsidian.env
+.lavish/

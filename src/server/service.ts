@@ -3,11 +3,13 @@ import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import { WebSocket } from 'ws';
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness';
 import { ensureDirectory } from '../shared/file-ops.js';
 import { generateShareToken, isShareToken } from '../shared/token.js';
 import { hashFile, sha256Hex } from '../shared/hash.js';
 import {
   findMarkdownFileById,
+  resolveMarkdownAsset,
   scanMarkdownFiles,
 } from '../shared/path-safety.js';
 import type {
@@ -40,12 +42,14 @@ interface RuntimeClient {
   displayName: string;
   joinedAt: number;
   lastSeenAt: number;
+  awarenessClientId: number | null;
 }
 
 interface RuntimeState {
   row: ShareRow;
   doc: Y.Doc;
   text: Y.Text;
+  awareness: Awareness;
   clients: Map<string, RuntimeClient>;
   persistTimer: NodeJS.Timeout | null;
   isPersisting: boolean;
@@ -82,6 +86,10 @@ function decodeUpdate(base64: string): Uint8Array {
 
 function encodeUpdate(update: Uint8Array): string {
   return Buffer.from(update).toString('base64');
+}
+
+function decodeAwarenessUpdate(base64: string): Uint8Array {
+  return Uint8Array.from(Buffer.from(base64, 'base64'));
 }
 
 function isExpired(row: ShareRow, timestamp = nowMs()): boolean {
@@ -300,7 +308,31 @@ export class MdShareService {
       modifiedAt: note.modifiedAt,
       size: note.size,
       excerpt,
+      content: sourceText,
     };
+  }
+
+  async resolveNoteAsset(noteId: string, assetPath: string): Promise<{ realPath: string; contentType: string; size: number } | null> {
+    const note = await findMarkdownFileById(this.notesRootRealPath, noteId);
+    if (!note) {
+      return null;
+    }
+
+    return resolveMarkdownAsset(this.notesRootRealPath, note.realPath, assetPath);
+  }
+
+  async resolveShareAsset(token: string, assetPath: string): Promise<{ realPath: string; contentType: string; size: number } | null> {
+    const row = await this.dbStore.getShare(token);
+    if (!row) {
+      return null;
+    }
+
+    const refreshed = await this.refreshShareFromDisk(row);
+    if (!isCollaborativeShareStatus(computeShareStatus(refreshed))) {
+      return null;
+    }
+
+    return resolveMarkdownAsset(this.notesRootRealPath, refreshed.sourceRealPath, assetPath);
   }
 
   async createShare(input: CreateShareInput): Promise<ShareSummary> {
@@ -580,6 +612,7 @@ export class MdShareService {
       displayName: 'Anonymous',
       joinedAt: nowMs(),
       lastSeenAt: nowMs(),
+      awarenessClientId: null,
     };
 
     this.sendSnapshot(runtime, socket);
@@ -633,11 +666,14 @@ export class MdShareService {
     if (row.yState.length > 0) {
       Y.applyUpdate(doc, row.yState, { source: 'db' });
     }
+    const awareness = new Awareness(doc);
+    awareness.setLocalState(null);
 
     const runtime: RuntimeState = {
       row,
       doc,
       text: doc.getText(DOC_NAME),
+      awareness,
       clients: new Map<string, RuntimeClient>(),
       persistTimer: null,
       isPersisting: false,
@@ -665,6 +701,30 @@ export class MdShareService {
       const senderConnectionId = getSenderConnectionId(origin as UpdateOrigin | undefined);
       this.broadcastUpdate(runtime, update, senderConnectionId);
       this.broadcastShareState(runtime.row.token);
+    });
+
+    awareness.on('update', (changes: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
+      const { added, updated, removed } = changes;
+      const changedClients = [...added, ...updated, ...removed];
+      if (changedClients.length === 0) {
+        return;
+      }
+
+      const senderConnectionId =
+        typeof origin === 'object' && origin && 'connectionId' in origin
+          ? String((origin as { connectionId?: string }).connectionId ?? '')
+          : null;
+      const payload = {
+        type: 'awareness',
+        update: encodeUpdate(encodeAwarenessUpdate(awareness, changedClients)),
+      };
+
+      for (const client of runtime.clients.values()) {
+        if (senderConnectionId && client.connectionId === senderConnectionId) {
+          continue;
+        }
+        sendJson(client.socket, payload);
+      }
     });
 
     this.runtimes.set(row.token, runtime);
@@ -809,6 +869,9 @@ export class MdShareService {
     sendJson(socket, {
       type: 'snapshot',
       update: encodeUpdate(Buffer.from(Y.encodeStateAsUpdate(runtime.doc))),
+      awareness: encodeUpdate(
+        encodeAwarenessUpdate(runtime.awareness, Array.from(runtime.awareness.getStates().keys())),
+      ),
       participantNames: sanitizeParticipantNames(runtime.clients.values()),
       status: computeShareStatus(runtime.row),
       lastExportedAt: runtime.row.lastExportedAt,
@@ -876,6 +939,10 @@ export class MdShareService {
     if (message.type === 'hello') {
       const displayName = clampDisplayName(String(message.displayName ?? 'Anonymous'));
       session.displayName = displayName;
+      const awarenessClientId = typeof message.clientId === 'number' && Number.isFinite(message.clientId) ? message.clientId : null;
+      if (awarenessClientId != null) {
+        session.awarenessClientId = awarenessClientId;
+      }
       session.lastSeenAt = nowMs();
       if (!runtime.clients.has(session.connectionId)) {
         runtime.clients.set(session.connectionId, session);
@@ -917,6 +984,25 @@ export class MdShareService {
       return;
     }
 
+    if (message.type === 'awareness') {
+      const updateBase64 = String(message.update ?? '');
+      if (!updateBase64) {
+        return;
+      }
+
+      const update = decodeAwarenessUpdate(updateBase64);
+      applyAwarenessUpdate(runtime.awareness, update, { source: 'ws', connectionId: session.connectionId });
+      session.lastSeenAt = nowMs();
+      this.dbStore.upsertParticipant({
+        shareToken: runtime.row.token,
+        connectionId: session.connectionId,
+        displayName: session.displayName,
+        joinedAt: session.joinedAt,
+        lastSeenAt: session.lastSeenAt,
+      });
+      return;
+    }
+
     if (message.type === 'ping') {
       sendJson(session.socket, { type: 'pong', timestamp: nowMs() });
     }
@@ -933,6 +1019,13 @@ export class MdShareService {
 
     runtime.clients.delete(session.connectionId);
     this.persistParticipantLeave(runtime, session);
+
+    if (session.awarenessClientId != null) {
+      removeAwarenessStates(runtime.awareness, [session.awarenessClientId], {
+        source: 'ws',
+        connectionId: session.connectionId,
+      });
+    }
 
     if (runtime.clients.size === 0 && runtime.row.revokedAt == null) {
       void this.exportShare(runtime.row.token, 'disconnect').catch(() => {

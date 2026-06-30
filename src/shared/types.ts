@@ -15,6 +15,7 @@ export interface NotePreview {
   modifiedAt: number;
   size: number;
   excerpt: string;
+  content: string;
 }
 
 export interface ShareSummary {
