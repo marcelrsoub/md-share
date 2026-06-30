@@ -67,6 +67,77 @@ clone_repo() {
   exit 1
 }
 
+copy_repo_tree() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local source_entry
+  local target_entry
+  local base_name
+  local source_names_file
+
+  source_names_file="$(mktemp)"
+
+  while IFS= read -r -d '' source_entry; do
+    base_name="$(basename "$source_entry")"
+    printf '%s\n' "$base_name" >> "$source_names_file"
+  done < <(find "$source_dir" -mindepth 1 -maxdepth 1 -print0)
+
+  while IFS= read -r -d '' target_entry; do
+    base_name="$(basename "$target_entry")"
+    case "$base_name" in
+      md-share.obsidian.env | .env | data | notes)
+        continue
+        ;;
+    esac
+
+    if ! grep -Fxq "$base_name" "$source_names_file"; then
+      rm -rf "$target_entry"
+    fi
+  done < <(find "$target_dir" -mindepth 1 -maxdepth 1 -print0)
+
+  while IFS= read -r -d '' source_entry; do
+    base_name="$(basename "$source_entry")"
+    case "$base_name" in
+      md-share.obsidian.env | .env | data | notes)
+        continue
+        ;;
+    esac
+
+    rm -rf "$target_dir/$base_name"
+    cp -R "$source_entry" "$target_dir/"
+  done < <(find "$source_dir" -mindepth 1 -maxdepth 1 -print0)
+
+  rm -f "$source_names_file"
+}
+
+refresh_repo() {
+  local target_dir="$1"
+
+  if command -v git >/dev/null 2>&1; then
+    if [[ -d "$target_dir/.git" ]]; then
+      git -C "$target_dir" pull --ff-only
+      return 0
+    fi
+
+    git -C "$target_dir" init >/dev/null
+    git -C "$target_dir" remote add origin "$repo_url" 2>/dev/null || git -C "$target_dir" remote set-url origin "$repo_url"
+    git -C "$target_dir" fetch --depth 1 origin "$repo_branch"
+    git -C "$target_dir" checkout -f FETCH_HEAD
+    git -C "$target_dir" clean -fdx -e md-share.obsidian.env -e .env -e data -e notes
+    git -C "$target_dir" branch -M "$repo_branch" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  require_command find
+  require_command cp
+
+  local fresh_dir
+  fresh_dir="$(mktemp -d)"
+  clone_repo "$fresh_dir"
+  copy_repo_tree "$fresh_dir" "$target_dir"
+  rm -rf "$fresh_dir"
+}
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -115,6 +186,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 repo_root=""
+repo_root_needs_refresh=false
 for candidate_dir in "$PWD" "$script_dir"; do
   if has_repo_files "$candidate_dir"; then
     repo_root="$candidate_dir"
@@ -122,16 +194,24 @@ for candidate_dir in "$PWD" "$script_dir"; do
   fi
 done
 
+if [[ -n "$repo_root" && "$repo_root" == "$install_root" ]]; then
+  repo_root_needs_refresh=true
+fi
+
 if [[ -z "$repo_root" ]]; then
   repo_root="$install_root"
   if has_repo_files "$repo_root"; then
-    :
+    repo_root_needs_refresh=true
   elif [[ -d "$repo_root/.git" ]]; then
-    git -C "$repo_root" pull --ff-only
+    repo_root_needs_refresh=true
   else
     mkdir -p "$(dirname "$repo_root")"
     clone_repo "$repo_root"
   fi
+fi
+
+if [[ "$repo_root_needs_refresh" == true ]]; then
+  refresh_repo "$repo_root"
 fi
 
 config_file="$repo_root/md-share.obsidian.env"
@@ -154,7 +234,8 @@ public_default="${PUBLIC_BASE_URL:-$(read_env_value PUBLIC_BASE_URL)}"
 public_default="${public_default:-http://localhost:3021}"
 
 if [[ -r /dev/tty ]]; then
-  exec {tty_fd}<>/dev/tty
+  tty_fd=3
+  exec 3<>/dev/tty
 else
   echo "This installer needs an interactive terminal." >&2
   exit 1
