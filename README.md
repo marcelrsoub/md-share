@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/marcelrsoub/md-share/main/install.s
 The installer asks for your notes folder path, writes a local env file, and starts Docker Compose.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marcelrsoub/md-share/v0.0.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/marcelrsoub/md-share/v0.0.2/install.sh | bash
 ```
 
 To work from a local clone instead, review the files first:
