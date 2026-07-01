@@ -1,6 +1,18 @@
-# MD Share
+# 📄 MD Share
 
-MD Share is a tiny self-hosted way to share one Markdown note at a time and edit it together in the browser.
+Collaborate on your Markdown notes in real time from an Obsidian vault, a local folder, or a remote share link.
+
+## Features
+
+- 🔗 Share a single Markdown note with a tokenized public link
+- ✍️ Edit live in the browser with collaborative cursors and participant names
+- 👀 Preview rendered Markdown beside the editor
+- 🖼️ Proxy local images safely from the mounted notes folder
+- 🗂️ Manage notes, shares, and exports from a separate admin UI
+- 🔒 Keep the admin surface private while exposing only the public editor
+- 🐳 Run everything locally with Docker Compose
+
+## Local URLs
 
 - Admin UI: `http://localhost:3020`
 - Public editor: `http://localhost:3021`
@@ -15,28 +27,26 @@ The public view shows live collaboration with multiple cursors and a rendered pr
 
 ![Public collaborative editor with three collaborators and visible cursors](docs/readme/public-collaboration.png)
 
-## Quick start
+## Quick Start
 
-Clone the repo and review the files first:
-
-```bash
-git clone https://github.com/marcelrsoub/md-share.git
-cd md-share
-bash install.sh
-```
-
-The installer asks for your notes folder path, writes a local env file, and starts Docker Compose.
-
-If you prefer the convenience shortcut, you can still run the installer directly. This tracks the current `main` branch:
+Use the installer script for the fastest setup:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/marcelrsoub/md-share/main/install.sh | bash
 ```
 
-To pin installs to the first public release once it is tagged, use:
+The installer asks for your notes folder path, writes a local env file, and starts Docker Compose.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/marcelrsoub/md-share/v0.0.1/install.sh | bash
+```
+
+To work from a local clone instead, review the files first:
+
+```bash
+git clone https://github.com/marcelrsoub/md-share.git
+cd md-share
+bash install.sh
 ```
 
 ## Notes Folder
