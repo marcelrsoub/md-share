@@ -5,7 +5,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
-import { CircleDot, ExternalLink, Settings2, UserRound } from 'lucide-react';
+import { CircleDot, Settings2, UserRound } from 'lucide-react';
 import type { PublicShareInfo } from '../../shared/types.js';
 import { Badge } from '../components/ui/badge.js';
 import { Button } from '../components/ui/button.js';
@@ -78,6 +78,14 @@ function buildAssetUrl(token: string, sourcePath: string): string {
   const url = new URL(`/api/share/${encodeURIComponent(token)}/assets`, window.location.origin);
   url.searchParams.set('path', sourcePath);
   return url.toString();
+}
+
+function GithubMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0.297C5.37 0.297 0 5.667 0 12.297c0 5.302 3.438 9.8 8.205 11.384.6.113.82-.26.82-.577 0-.285-.01-1.04-.016-2.04-3.338.725-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.73.084-.73 1.205.085 1.838 1.238 1.838 1.238 1.07 1.835 2.807 1.305 3.492.998.107-.776.418-1.306.76-1.606-2.665-.304-5.466-1.333-5.466-5.93 0-1.31.469-2.382 1.236-3.223-.124-.303-.536-1.527.117-3.176 0 0 1.008-.322 3.3 1.23a11.48 11.48 0 0 1 6.005 0c2.291-1.552 3.298-1.23 3.298-1.23.653 1.649.242 2.873.12 3.176.77.841 1.235 1.913 1.235 3.223 0 4.609-2.807 5.624-5.48 5.92.43.37.814 1.103.814 2.222 0 1.606-.014 2.896-.014 3.287 0 .322.216.694.825.576C20.565 22.096 24 17.599 24 12.297c0-6.63-5.373-12-12-12Z" />
+    </svg>
+  );
 }
 
 function EditorHost({
@@ -557,9 +565,8 @@ export function PublicApp() {
         <DialogContent>
           <DialogHeader>
             <div>
-              <div className="eyebrow">Settings</div>
               <DialogTitle id="public-settings-title">Display name</DialogTitle>
-              <DialogDescription>Pick the name collaborators will see while you edit this note.</DialogDescription>
+              <DialogDescription>Shown to collaborators.</DialogDescription>
             </div>
             <DialogClose />
           </DialogHeader>
@@ -588,8 +595,8 @@ export function PublicApp() {
 
             <div className="settings-links">
               <a className="button-ghost settings-link" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
-                <ExternalLink />
-                <span>View on GitHub</span>
+                <GithubMark />
+                <span>See MD Share on GitHub</span>
               </a>
             </div>
           </DialogBody>

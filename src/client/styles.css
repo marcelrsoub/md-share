@@ -286,30 +286,6 @@ svg {
   background: rgba(20, 46, 31, 0.45);
 }
 
-.admin-toast {
-  position: sticky;
-  top: 16px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: min(720px, calc(100vw - 32px));
-  margin: 0 auto 12px;
-  backdrop-filter: blur(12px);
-}
-
-.toast-link {
-  max-width: 48ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: currentColor;
-  text-underline-offset: 0.2em;
-}
-
 .admin-topbar,
 .public-topbar {
   display: flex;
@@ -941,10 +917,6 @@ svg {
   .inline-name-editor {
     min-width: 100%;
   }
-
-  .admin-toast {
-    width: 100%;
-  }
 }
 
 @media (max-width: 640px) {
@@ -976,14 +948,5 @@ svg {
 
   .public-details {
     gap: 8px;
-  }
-
-  .admin-toast {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .toast-link {
-    max-width: 100%;
   }
 }

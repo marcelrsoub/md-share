@@ -14,11 +14,12 @@ import {
 import type { AdminConfig, NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
 import { Badge } from '../components/ui/badge.js';
 import { Button } from '../components/ui/button.js';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu.js';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card.js';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
 import { Input } from '../components/ui/input.js';
 import { Separator } from '../components/ui/separator.js';
-import { Toaster, toast } from '../components/ui/sonner.js';
+import { Toaster, toast } from '../components/ui/toast.js';
 import { MarkdownPreview } from '../components/markdown-preview.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
@@ -50,6 +51,10 @@ export function parseExpirySelection(selection: string): number | null {
 
   const minutes = Number.parseInt(trimmed, 10);
   return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
+}
+
+function getExpirySelectionLabel(selection: string): string {
+  return EXPIRY_PRESETS.find((preset) => preset.value === selection)?.label ?? 'Never';
 }
 
 interface FolderNode {
@@ -239,6 +244,7 @@ export function AdminApp() {
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
   const tree = useMemo(() => buildNoteTree(notes), [notes]);
   const selectedShares = shares.filter((share) => share.noteId === selectedNoteId);
+  const selectedExpiryLabel = useMemo(() => getExpirySelectionLabel(expiresSelection), [expiresSelection]);
 
   async function loadNotes(query = search): Promise<void> {
     setLoadingNotes(true);
@@ -493,12 +499,12 @@ export function AdminApp() {
 
   return (
     <div className="app-shell app-shell-admin">
-      <Toaster position="top-right" richColors closeButton />
+      <Toaster />
 
       <Card className="admin-topbar">
         <CardContent className="panel-tight topbar-block">
           <div className="topbar-copy">
-            <CardTitle>Admin</CardTitle>
+            <CardTitle>MD Share - Admin View</CardTitle>
           </div>
 
           <div className="topbar-controls">
@@ -513,18 +519,15 @@ export function AdminApp() {
         <DialogContent>
           <DialogHeader>
             <div>
-              <div className="eyebrow">Admin settings</div>
-              <DialogTitle id="admin-settings-title">Shared link base URL</DialogTitle>
-              <DialogDescription>
-                This URL is used to build the copied share link. Use a site root like https://share.example.com.
-              </DialogDescription>
+              <DialogTitle id="admin-settings-title">Shared link settings</DialogTitle>
+              <DialogDescription>Base URL for copied links.</DialogDescription>
             </div>
             <DialogClose />
           </DialogHeader>
 
           <DialogBody>
             <label className="settings-field">
-              <span>Shared link base URL</span>
+              <span>Base URL</span>
               <div className="mini-field settings-input">
                 <Input
                   type="url"
@@ -602,30 +605,32 @@ export function AdminApp() {
         </Card>
 
         <main className="admin-main">
-          <Card className="command-strip panel-tight">
-            <div className="command-strip-main">
-              <div className="command-selection">
+          <Card className="admin-workbench panel-tight">
+            <div className="workbench-toolbar">
+              <div className="command-selection workbench-selection">
                 <CardTitle>{selectedNote?.name ?? 'Choose a note'}</CardTitle>
                 <CardDescription className="mono">{selectedNote?.relativePath ?? 'No file selected'}</CardDescription>
               </div>
 
-              <label className="mini-field expires-field" htmlFor="expires-minutes">
-                <span>Expires</span>
-                <select
-                  id="expires-minutes"
-                  className="ui-input expires-select"
-                  value={expiresSelection}
-                  onChange={(event) => setExpiresSelection(event.target.value)}
-                >
-                  {EXPIRY_PRESETS.map((preset) => (
-                    <option key={preset.value || 'never'} value={preset.value}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="workbench-actions">
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="button-ghost expires-trigger" aria-label="Select share expiry">
+                    <span className="expires-trigger-label">Expires</span>
+                    <span className="expires-trigger-value">{selectedExpiryLabel}</span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={10}>
+                    {EXPIRY_PRESETS.map((preset) => (
+                      <DropdownMenuItem
+                        key={preset.value || 'never'}
+                        checked={preset.value === expiresSelection}
+                        onClick={() => setExpiresSelection(preset.value)}
+                      >
+                        {preset.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
-              <div className="command-actions">
                 <Button onClick={() => void createShare()} disabled={!selectedNote}>
                   <Share2 />
                   <span>Create share</span>
@@ -636,72 +641,80 @@ export function AdminApp() {
                 </Button>
               </div>
             </div>
-          </Card>
 
-          <section className="admin-preview-grid">
-          <Card className="panel-tight preview-panel">
-            <CardHeader className="preview-head">
-              <CardTitle>Preview</CardTitle>
-              {selectedPreview ? (
-                <div className="preview-meta muted">
-                  <span>{formatTimestamp(selectedPreview.modifiedAt)}</span>
-                  <Separator orientation="vertical" />
-                  <span>{formatBytes(selectedPreview.size)}</span>
-                  </div>
-                ) : null}
-              </CardHeader>
+            <Separator />
 
-              <CardContent className="preview-sheet">
-                {loadingPreview ? <p className="muted">Loading preview...</p> : null}
-                {!loadingPreview && selectedPreview ? (
-                  <MarkdownPreview
-                    content={selectedPreview.content || selectedPreview.excerpt || ''}
-                    emptyLabel="This note is empty."
-                    resolveImageUrl={(source) => buildAdminAssetUrl(selectedPreview.id, source)}
-                  />
-                ) : null}
-                {!loadingPreview && !selectedPreview ? <p className="muted">Select a note to preview its content.</p> : null}
-              </CardContent>
-            </Card>
+            <div className="workbench-grid">
+              <section className="workbench-section preview-panel">
+                <CardHeader className="preview-head workbench-section-head">
+                  <CardTitle>Preview</CardTitle>
+                  {selectedPreview ? (
+                    <div className="preview-meta muted">
+                      <span>{formatTimestamp(selectedPreview.modifiedAt)}</span>
+                      <Separator orientation="vertical" />
+                      <span>{formatBytes(selectedPreview.size)}</span>
+                    </div>
+                  ) : null}
+                </CardHeader>
 
-            <Card className="panel-tight shares-panel">
-              <CardHeader className="preview-head">
-                <CardTitle>{selectedNote ? `Shared Links (${selectedShares.length})` : `Shared Links (${shares.length})`}</CardTitle>
-              </CardHeader>
+                <div className="preview-sheet">
+                  {loadingPreview ? <p className="muted">Loading preview...</p> : null}
+                  {!loadingPreview && selectedPreview ? (
+                    <MarkdownPreview
+                      content={selectedPreview.content || selectedPreview.excerpt || ''}
+                      emptyLabel="This note is empty."
+                      resolveImageUrl={(source) => buildAdminAssetUrl(selectedPreview.id, source)}
+                    />
+                  ) : null}
+                  {!loadingPreview && !selectedPreview ? <p className="muted">Select a note to preview its content.</p> : null}
+                </div>
+              </section>
 
-              <CardContent className="share-list-compact">
-                {(selectedNote ? selectedShares : shares).map((share) => (
-                  <article key={share.token} className="share-row-compact">
-                    <div className="share-row-copy">
-                      <div className="share-row-title">
-                        <strong>{share.noteName}</strong>
-                        <Badge variant="outline" className={`tone-${statusTone(share.status)}`}>
-                          {shareStatusLabel(share.status)}
-                        </Badge>
+              <section className="workbench-section shares-panel">
+                <CardHeader className="preview-head workbench-section-head">
+                  <CardTitle>{selectedNote ? `Shared Links (${selectedShares.length})` : `Shared Links (${shares.length})`}</CardTitle>
+                </CardHeader>
+
+                <div className="share-list-compact">
+                  {(selectedNote ? selectedShares : shares).map((share) => (
+                    <article key={share.token} className={`share-row-compact${share.status === 'revoked' ? ' is-revoked' : ''}`}>
+                      <div className="share-row-copy">
+                        <div className="share-row-title">
+                          <strong>{share.noteName}</strong>
+                          <Badge variant="outline" className={`tone-${statusTone(share.status)}`}>
+                            {shareStatusLabel(share.status)}
+                          </Badge>
+                        </div>
+                        <div className="muted mono share-row-token">{shortToken(share.token)}</div>
                       </div>
-                      <div className="muted mono">{shortToken(share.token)}</div>
-                    </div>
 
-                    <div className="share-row-actions">
-                      <Button variant="icon" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link">
-                        <Copy />
-                      </Button>
-                      <Button variant="icon" onClick={() => void exportShare(share.token)} aria-label="Export note">
-                        <Download />
-                      </Button>
-                      <Button variant="icon" className="danger-button" onClick={() => void revokeShare(share.token)} aria-label="Revoke share">
-                        <Ban />
-                      </Button>
-                    </div>
-                  </article>
-                ))}
+                      <div className="share-row-actions">
+                        <Button variant="icon" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link" disabled={share.status === 'revoked'}>
+                          <Copy />
+                        </Button>
+                        <Button variant="icon" onClick={() => void exportShare(share.token)} aria-label="Export note" disabled={share.status === 'revoked'}>
+                          <Download />
+                        </Button>
+                        <Button
+                          variant="icon"
+                          className="danger-button"
+                          onClick={() => void revokeShare(share.token)}
+                          aria-label="Revoke share"
+                          disabled={share.status === 'revoked'}
+                        >
+                          <Ban />
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
 
-                {(selectedNote ? selectedShares : shares).length === 0 ? (
-                  <div className="empty-state muted">{selectedNote ? 'No shares for this note yet.' : 'No shares yet.'}</div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </section>
+                  {(selectedNote ? selectedShares : shares).length === 0 ? (
+                    <div className="empty-state muted">{selectedNote ? 'No shares for this note yet.' : 'No shares yet.'}</div>
+                  ) : null}
+                </div>
+              </section>
+            </div>
+          </Card>
         </main>
       </div>
     </div>
