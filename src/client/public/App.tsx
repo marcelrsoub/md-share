@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { basicSetup, EditorView } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { markdown } from '@codemirror/lang-markdown';
@@ -12,10 +12,10 @@ import { Button } from '../components/ui/button.js';
 import { Card, CardContent, CardTitle } from '../components/ui/card.js';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
 import { Input } from '../components/ui/input.js';
-import { MarkdownPreview } from '../components/markdown-preview.js';
 import { base64ToUint8Array, uint8ArrayToBase64 } from '../shared/binary.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatTimestamp, shareStatusLabel, statusTone } from '../shared/api.js';
+import { livePreview } from './live-preview.js';
 
 const STORAGE_KEY = 'md-share.display-name';
 const CLIENT_ID_KEY = 'md-share.presence-id';
@@ -92,12 +92,12 @@ function EditorHost({
   doc,
   awareness,
   editable,
-  onContentChange,
+  resolveImageUrl,
 }: {
   doc: Y.Doc;
   awareness: Awareness;
   editable: boolean;
-  onContentChange: (content: string) => void;
+  resolveImageUrl: (source: string) => string | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
 
@@ -114,6 +114,7 @@ function EditorHost({
         extensions: [
           basicSetup,
           markdown(),
+          livePreview({ resolveImageUrl }),
           yCollab(yText, awareness),
           EditorState.readOnly.of(!editable),
           EditorView.theme({
@@ -180,21 +181,14 @@ function EditorHost({
             },
           }),
           EditorView.lineWrapping,
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
-              onContentChange(yText.toString());
-            }
-          }),
         ],
       }),
     });
 
-    onContentChange(yText.toString());
-
     return () => {
       view.destroy();
     };
-  }, [awareness, doc, editable, onContentChange]);
+  }, [awareness, doc, editable, resolveImageUrl]);
 
   return (
     <div className={`editor-host editor-host-public${editable ? '' : ' is-readonly'}`}>
@@ -215,13 +209,18 @@ export function PublicApp() {
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'closed'>('idle');
   const [participantNames, setParticipantNames] = useState<string[]>([]);
   const [currentStatus, setCurrentStatus] = useState<'active' | 'dirty' | 'conflict' | 'expired' | 'revoked'>('active');
-  const [editorText, setEditorText] = useState('');
   const docRef = useState(() => new Y.Doc())[0];
   const awarenessRef = useState(() => new Awareness(docRef))[0];
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const clientId = useState(() => getPresenceId())[0];
-  const deferredEditorText = useDeferredValue(editorText);
   const presenceTheme = useMemo(() => getPresenceTheme(clientId), [clientId]);
+  const resolvePublicImageUrl = useMemo(() => {
+    if (!token) {
+      return () => null;
+    }
+
+    return (source: string) => buildAssetUrl(token, source);
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
@@ -623,26 +622,11 @@ export function PublicApp() {
             doc={docRef}
             awareness={awarenessRef}
             editable={editable}
-            onContentChange={setEditorText}
+            resolveImageUrl={resolvePublicImageUrl}
           />
 
           {!displayName ? <div className="editor-empty-hint muted">Open settings to add your name and join the live session.</div> : null}
         </section>
-
-        <aside className="workspace-panel public-preview-panel panel">
-          <div className="workspace-panel-header">
-            <CardTitle>Preview</CardTitle>
-            <span className="muted">Updates as you type</span>
-          </div>
-
-          <div className="preview-surface">
-            <MarkdownPreview
-              content={deferredEditorText}
-              emptyLabel="Start typing to generate the rendered note."
-              resolveImageUrl={(source) => buildAssetUrl(token, source)}
-            />
-          </div>
-        </aside>
       </main>
     </div>
   );
