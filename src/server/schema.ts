@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS shares (
   source_hash TEXT NOT NULL,
   source_mtime_ms INTEGER NOT NULL,
   y_state BLOB NOT NULL,
+  markdown_snapshot TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   expires_at INTEGER,
   revoked_at INTEGER,

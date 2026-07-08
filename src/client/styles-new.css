@@ -1062,12 +1062,23 @@ img {
 }
 
 .public-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.9fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  align-items: stretch;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
+}
+
+.public-workspace .workspace-panel {
+  min-width: 0;
+  min-height: 0;
+}
+
+.public-editor-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1076,86 +1087,11 @@ img {
   display: flex;
   flex-direction: column;
   flex: 1;
-  height: 100%;
   min-height: 0;
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) - 4px);
   background: rgba(255, 255, 255, 0.015);
   overflow: hidden;
-}
-
-.editor-host > div {
-  flex: 1;
-  min-height: 0;
-}
-
-.editor-host .cm-editor {
-  height: 100%;
-  min-height: 0;
-  background: transparent;
-}
-
-.editor-host .cm-scroller {
-  height: 100%;
-  scrollbar-gutter: stable;
-}
-
-.editor-host .cm-content {
-  min-height: 100%;
-  padding: 22px 24px 84px;
-  max-width: 76ch;
-  margin: 0 auto;
-  font-size: 1rem;
-  line-height: 1.8;
-}
-
-.editor-host .cm-gutters {
-  display: none;
-}
-
-.editor-host .cm-focused {
-  outline: none;
-}
-
-.editor-host .cm-activeLine {
-  background-color: rgba(255, 255, 255, 0.02);
-}
-
-.editor-host .cm-cursor {
-  border-left-color: var(--accent-strong);
-}
-
-.editor-host .cm-selectionBackground,
-.editor-host.cm-focused .cm-selectionBackground,
-.editor-host ::selection {
-  background-color: rgba(124, 58, 237, 0.2);
-}
-
-.editor-host .cm-ySelectionCaret {
-  border-radius: 999px 999px 999px 0;
-  min-height: 1.55em;
-  padding-inline: 0.38rem;
-  border-width: 2px;
-  box-shadow: 0 0 0 1px rgba(5, 6, 8, 0.4);
-}
-
-.editor-host .cm-ySelectionCaretDot {
-  display: none;
-}
-
-.editor-host .cm-ySelectionInfo {
-  opacity: 1;
-  transform: translateY(-2px);
-  font-family: var(--font-sans);
-  font-size: 0.72rem;
-  letter-spacing: 0.02em;
-  border-radius: 999px;
-  padding: 0.08rem 0.42rem;
-  box-shadow: 0 0 0 1px rgba(5, 6, 8, 0.28);
-}
-
-.editor-host .cm-ySelection {
-  border-radius: 0.35rem;
 }
 
 .editor-host-public.is-readonly {
@@ -1172,6 +1108,7 @@ img {
   text-align: center;
   padding: 24px;
   backdrop-filter: blur(2px);
+  z-index: 1;
 }
 
 .editor-empty-hint {
@@ -1180,16 +1117,232 @@ img {
   margin-top: 10px;
 }
 
-.preview-surface {
+.public-milkdown-editor {
   flex: 1;
-  height: 100%;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 4px);
-  background: rgba(255, 255, 255, 0.015);
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.public-milkdown-editor .milkdown {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: auto;
   scrollbar-gutter: stable;
+}
+
+.public-milkdown-editor .milkdown-top-bar,
+.public-milkdown-editor .milkdown-toolbar {
+  display: none;
+}
+
+.public-milkdown-editor .ProseMirror {
+  min-height: 100%;
+  max-width: 76ch;
+  margin: 0 auto;
+  padding: 22px 24px 84px;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: #dbe4f0;
+  outline: none;
+  box-shadow: none;
+}
+
+.public-milkdown-editor .ProseMirror:focus,
+.public-milkdown-editor .ProseMirror:focus-visible,
+.public-milkdown-editor .ProseMirror.ProseMirror-focused {
+  outline: none;
+  box-shadow: none;
+}
+
+.public-milkdown-editor .ProseMirror > * {
+  margin: 0;
+}
+
+.public-milkdown-editor .ProseMirror h1,
+.public-milkdown-editor .ProseMirror h2,
+.public-milkdown-editor .ProseMirror h3,
+.public-milkdown-editor .ProseMirror h4,
+.public-milkdown-editor .ProseMirror h5,
+.public-milkdown-editor .ProseMirror h6 {
+  padding: 2px 0;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: #f4f4f5;
+}
+
+.public-milkdown-editor .ProseMirror h1 {
+  font-size: clamp(2rem, 4vw, 3.25rem);
+}
+
+.public-milkdown-editor .ProseMirror h2 {
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+}
+
+.public-milkdown-editor .ProseMirror h3 {
+  font-size: clamp(1.2rem, 2.2vw, 1.6rem);
+}
+
+.public-milkdown-editor .ProseMirror h4,
+.public-milkdown-editor .ProseMirror h5,
+.public-milkdown-editor .ProseMirror h6 {
+  font-size: 1rem;
+  color: #e2e8f0;
+}
+
+.public-milkdown-editor .ProseMirror p {
+  margin: 0.35rem 0;
+  padding: 0;
+}
+
+.public-milkdown-editor .ProseMirror a {
+  color: #93c5fd;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.public-milkdown-editor .ProseMirror blockquote {
+  display: grid;
+  gap: 0.55rem;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.public-milkdown-editor .ProseMirror blockquote p {
+  padding: 0;
+}
+
+.public-milkdown-editor .ProseMirror hr {
+  width: 100%;
+  height: 1px;
+  border: 0;
+  background: var(--border);
+}
+
+.public-milkdown-editor .ProseMirror pre {
+  margin: 0;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(3, 7, 18, 0.72);
+  overflow: hidden;
+}
+
+.public-milkdown-editor .ProseMirror pre code {
+  display: block;
+  padding: 16px;
+  color: #f8fafc;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  line-height: 1.65;
+  overflow-x: auto;
+}
+
+.public-milkdown-editor .ProseMirror code {
+  padding: 0.1rem 0.32rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.public-milkdown-editor .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.public-milkdown-editor .ProseMirror ul,
+.public-milkdown-editor .ProseMirror ol {
+  margin: 0;
+  padding-left: 1.35rem;
+  list-style: none;
+}
+
+.public-milkdown-editor .ProseMirror li {
+  list-style: none;
+}
+
+.public-milkdown-editor .milkdown-list-item-block {
+  display: block;
+  padding: 0;
+  margin: 0.15rem 0;
+}
+
+.public-milkdown-editor .milkdown-list-item-block > .list-item {
+  display: grid;
+  grid-template-columns: 1.35rem minmax(0, 1fr);
+  gap: 0.25rem;
+  align-items: start;
+}
+
+.public-milkdown-editor .milkdown-list-item-block > .list-item > .children {
+  min-width: 0;
+}
+
+.public-milkdown-editor .milkdown-list-item-block li .label-wrapper {
+  width: 1.35rem;
+  min-height: 1.35rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  color: #dbe4f0;
+  padding-top: 0.12rem;
+}
+
+.public-milkdown-editor .milkdown-list-item-block li .label-wrapper .label {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.public-milkdown-editor .milkdown-list-item-block li .label-wrapper svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.public-milkdown-editor .milkdown-list-item-block .content-dom p {
+  color: #dbe4f0;
+  padding: 0;
+  margin: 0;
+}
+
+.public-milkdown-editor .ProseMirror-yjs-cursor {
+  position: absolute;
+  display: block;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border-left: 2px solid;
+  box-shadow: none;
+  pointer-events: none;
+  vertical-align: baseline;
+}
+
+.public-milkdown-editor .ProseMirror-yjs-cursor > span {
+  position: absolute;
+  left: -1px;
+  top: -1.05em;
+  padding: 0 2px;
+  border-radius: 999px;
+  color: #f8fafc;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: normal;
+  line-height: normal;
+  white-space: nowrap;
+  box-shadow: 0 0 0 1px rgba(5, 6, 8, 0.28);
+  user-select: none;
+  pointer-events: none;
 }
 
 .markdown-preview {
@@ -1437,8 +1590,7 @@ img {
 
 @media (max-width: 1200px) {
   .admin-layout,
-  .workbench-grid,
-  .public-workspace {
+  .workbench-grid {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     align-items: stretch;
@@ -1453,9 +1605,7 @@ img {
     max-height: none;
   }
 
-  .preview-sheet,
-  .preview-surface,
-  .editor-host .cm-editor {
+  .preview-sheet {
     min-height: 0;
   }
 
@@ -1596,8 +1746,6 @@ img {
     gap: 6px;
   }
 
-  .editor-host .cm-content,
-  .preview-surface,
   .preview-sheet {
     padding-left: 16px;
     padding-right: 16px;

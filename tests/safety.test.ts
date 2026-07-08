@@ -123,16 +123,22 @@ describe('path safety', () => {
     const notesRoot = await makeTempDir('md-share-assets-');
     const sourcePath = path.join(notesRoot, 'note.md');
     const imagePath = path.join(notesRoot, 'image.png');
+    const svgPath = path.join(notesRoot, 'diagram.svg');
 
     await fs.writeFile(sourcePath, '# note', 'utf8');
     await fs.writeFile(
       imagePath,
       Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO4X5ioAAAAASUVORK5CYII=', 'base64'),
     );
+    await fs.writeFile(svgPath, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>', 'utf8');
 
     const resolution = await resolveMarkdownAsset(notesRoot, sourcePath, 'image.png');
     expect(resolution?.realPath).toBe(await fs.realpath(imagePath));
     expect(resolution?.contentType).toBe('image/png');
+
+    const svgResolution = await resolveMarkdownAsset(notesRoot, sourcePath, 'diagram.svg');
+    expect(svgResolution?.realPath).toBe(await fs.realpath(svgPath));
+    expect(svgResolution?.contentType).toBe('image/svg+xml');
 
     await expect(resolveMarkdownAsset(notesRoot, sourcePath, '../escape.png')).resolves.toBeNull();
     await expect(resolveMarkdownAsset(notesRoot, sourcePath, 'https://example.com/image.png')).resolves.toBeNull();
@@ -198,6 +204,7 @@ function makeShareRow(overrides: Partial<ShareRow>): ShareRow {
     sourceHash: overrides.sourceHash ?? sha256Hex('original content'),
     sourceMtimeMs: overrides.sourceMtimeMs ?? now,
     yState: overrides.yState ?? Buffer.from('state'),
+    markdownSnapshot: overrides.markdownSnapshot ?? 'original content',
     createdAt: overrides.createdAt ?? now,
     expiresAt: overrides.expiresAt ?? null,
     revokedAt: overrides.revokedAt ?? null,

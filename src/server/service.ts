@@ -25,10 +25,10 @@ import type {
 } from '../shared/types.js';
 import type { AppConfig } from './config.js';
 import type { SqliteDatabase } from './database.js';
+import { resolveMarkdownSnapshot } from './markdown-snapshot.js';
 import { DatabaseStore } from './store.js';
 import { exportMarkdownShare, hasSourceChangedExternally, readSourceSnapshot } from './export.js';
 
-const DOC_NAME = 'content';
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const EXPIRATION_SWEEP_MS = 30 * 1000;
 const PERSIST_DEBOUNCE_MS = 500;
@@ -48,7 +48,6 @@ interface RuntimeClient {
 interface RuntimeState {
   row: ShareRow;
   doc: Y.Doc;
-  text: Y.Text;
   awareness: Awareness;
   clients: Map<string, RuntimeClient>;
   persistTimer: NodeJS.Timeout | null;
@@ -158,18 +157,6 @@ function sanitizeParticipantNames(participants: Iterable<RuntimeClient>): string
   return Array.from(unique).sort((left, right) => left.localeCompare(right));
 }
 
-function runtimeToText(runtime: RuntimeState): string {
-  return runtime.text.toString();
-}
-
-function yStateToText(snapshot: Buffer): string {
-  const doc = new Y.Doc();
-  if (snapshot.length > 0) {
-    Y.applyUpdate(doc, snapshot, { source: 'db' });
-  }
-  return doc.getText(DOC_NAME).toString();
-}
-
 function isIgnoredUpdateOrigin(origin: UpdateOrigin | undefined): boolean {
   if (typeof origin === 'string') {
     return origin === 'db' || origin === 'persist' || origin === 'export';
@@ -244,6 +231,24 @@ export class MdShareService {
 
   private getShareBaseUrl(): string {
     return this.shareBaseUrl;
+  }
+
+  private async ensureMarkdownSnapshot(row: ShareRow, updatedAt = nowMs()): Promise<ShareRow> {
+    const markdownSnapshot = resolveMarkdownSnapshot(row);
+    if (row.markdownSnapshot === markdownSnapshot) {
+      return row;
+    }
+
+    this.dbStore.updateShare(row.token, {
+      markdown_snapshot: markdownSnapshot,
+      updated_at: updatedAt,
+    });
+
+    return {
+      ...row,
+      markdownSnapshot,
+      updatedAt,
+    };
   }
 
   getAdminConfig(): AdminConfig {
@@ -364,9 +369,7 @@ export class MdShareService {
     const sourceHash = await hashFile(note.realPath);
     const createdAt = nowMs();
     const token = generateShareToken();
-    const doc = new Y.Doc();
-    doc.getText(DOC_NAME).insert(0, sourceText);
-    const yState = Buffer.from(Y.encodeStateAsUpdate(doc));
+    const yState = Buffer.from(Y.encodeStateAsUpdate(new Y.Doc()));
 
     const row: Omit<ShareRow, 'id'> = {
       token,
@@ -378,6 +381,7 @@ export class MdShareService {
       sourceHash,
       sourceMtimeMs: note.modifiedAt,
       yState,
+      markdownSnapshot: sourceText,
       createdAt,
       expiresAt: input.expiresAt ?? null,
       revokedAt: null,
@@ -460,6 +464,8 @@ export class MdShareService {
       status: computeShareStatus(refreshed),
       expiresAt: refreshed.expiresAt,
       lastExportedAt: refreshed.lastExportedAt,
+      hasYState: refreshed.yState.length > 0,
+      markdownSnapshot: resolveMarkdownSnapshot(refreshed),
       participantNames,
     };
   }
@@ -481,7 +487,7 @@ export class MdShareService {
     }
 
     const freshRow = await this.refreshShareFromDisk(row);
-    const content = runtime ? runtimeToText(runtime) : yStateToText(freshRow.yState);
+    const content = resolveMarkdownSnapshot(freshRow);
 
     const result = await exportMarkdownShare({
       share: freshRow,
@@ -491,9 +497,7 @@ export class MdShareService {
     });
 
     const exportedAt = nowMs();
-    const yState = runtime
-      ? Buffer.from(Y.encodeStateAsUpdate(runtime.doc))
-      : freshRow.yState;
+    const yState = runtime ? Buffer.from(Y.encodeStateAsUpdate(runtime.doc)) : freshRow.yState;
 
     if (result.status === 'exported') {
       const sourceSnapshot = result.sourceSnapshot ?? (await readSourceSnapshot(freshRow.sourcePath));
@@ -672,7 +676,6 @@ export class MdShareService {
     const runtime: RuntimeState = {
       row,
       doc,
-      text: doc.getText(DOC_NAME),
       awareness,
       clients: new Map<string, RuntimeClient>(),
       persistTimer: null,
@@ -772,12 +775,14 @@ export class MdShareService {
   }
 
   private async refreshShareFromDisk(row: ShareRow): Promise<ShareRow> {
+    const updatedAt = nowMs();
+    row = await this.ensureMarkdownSnapshot(row, updatedAt);
+
     if (row.revokedAt != null) {
       return row;
     }
 
     const snapshot = await readSourceSnapshot(row.sourcePath);
-    const updatedAt = nowMs();
 
     if (!snapshot) {
       if (!row.conflict || row.lastError !== 'Source file missing') {
@@ -875,6 +880,8 @@ export class MdShareService {
       participantNames: sanitizeParticipantNames(runtime.clients.values()),
       status: computeShareStatus(runtime.row),
       lastExportedAt: runtime.row.lastExportedAt,
+      hasYState: runtime.row.yState.length > 0,
+      markdownSnapshot: resolveMarkdownSnapshot(runtime.row),
     });
   }
 
@@ -907,9 +914,11 @@ export class MdShareService {
       type: 'state',
       status: computeShareStatus(row),
       lastExportedAt: row.lastExportedAt,
+      hasYState: row.yState.length > 0,
       participantNames,
       dirty: Boolean(row.dirty),
       conflict: Boolean(row.conflict),
+      markdownSnapshot: resolveMarkdownSnapshot(row),
     };
 
     if (runtime) {
@@ -981,6 +990,22 @@ export class MdShareService {
         joinedAt: session.joinedAt,
         lastSeenAt: session.lastSeenAt,
       });
+      return;
+    }
+
+    if (message.type === 'markdown') {
+      const markdownSnapshot = typeof message.markdown === 'string' ? message.markdown : '';
+      session.lastSeenAt = nowMs();
+      runtime.row = {
+        ...runtime.row,
+        markdownSnapshot,
+        updatedAt: session.lastSeenAt,
+      };
+      this.dbStore.updateShare(runtime.row.token, {
+        markdown_snapshot: markdownSnapshot,
+        updated_at: session.lastSeenAt,
+      });
+      this.broadcastShareState(runtime.row.token);
       return;
     }
 

@@ -13,6 +13,11 @@ export async function openDatabase(databasePath: string): Promise<SqliteDatabase
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA_SQL);
+  const shareColumns = db.prepare('PRAGMA table_info(shares)').all() as Array<Record<string, unknown>>;
+  const hasMarkdownSnapshot = shareColumns.some((column) => String(column.name) === 'markdown_snapshot');
+  if (!hasMarkdownSnapshot) {
+    db.exec("ALTER TABLE shares ADD COLUMN markdown_snapshot TEXT NOT NULL DEFAULT ''");
+  }
   return db;
 }
 
@@ -28,6 +33,7 @@ export function rowToShare(row: Record<string, unknown>): ShareRow {
     sourceHash: String(row.source_hash),
     sourceMtimeMs: Number(row.source_mtime_ms),
     yState: row.y_state instanceof Buffer ? row.y_state : Buffer.from(row.y_state as ArrayBuffer),
+    markdownSnapshot: row.markdown_snapshot == null ? '' : String(row.markdown_snapshot),
     createdAt: Number(row.created_at),
     expiresAt: row.expires_at == null ? null : Number(row.expires_at),
     revokedAt: row.revoked_at == null ? null : Number(row.revoked_at),

@@ -46,6 +46,8 @@ export interface PublicShareInfo {
   status: ShareStatus;
   expiresAt: number | null;
   lastExportedAt: number | null;
+  hasYState: boolean;
+  markdownSnapshot: string;
   participantNames: string[];
 }
 
@@ -70,6 +72,7 @@ export interface ShareRow {
   sourceHash: string;
   sourceMtimeMs: number;
   yState: Buffer;
+  markdownSnapshot: string;
   createdAt: number;
   expiresAt: number | null;
   revokedAt: number | null;

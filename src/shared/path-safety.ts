@@ -11,6 +11,7 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
   '.gif': 'image/gif',
   '.jpeg': 'image/jpeg',
   '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.webp': 'image/webp',
 };

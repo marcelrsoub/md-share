@@ -152,8 +152,9 @@ describe('md-share integration', () => {
 
       const publicInfoResponse = await fetch(`${publicBase}/api/share/${share.token}`);
       expect(publicInfoResponse.ok).toBe(true);
-      const publicInfo = (await publicInfoResponse.json()) as { noteName: string };
+      const publicInfo = (await publicInfoResponse.json()) as { noteName: string; markdownSnapshot: string };
       expect(publicInfo.noteName).toBe('shared-note.md');
+      expect(publicInfo.markdownSnapshot).toContain('Hello from MD Share');
 
       socket1 = new WebSocket(`${publicBase.replace('http', 'ws')}/ws/share/${share.token}`);
       socket2 = new WebSocket(`${publicBase.replace('http', 'ws')}/ws/share/${share.token}`);
@@ -231,6 +232,17 @@ describe('md-share integration', () => {
       Y.applyUpdate(receiverDoc, Buffer.from(updateMessage.update, 'base64'));
       expect(receiverDoc.getText('content').toString()).toContain('More text');
 
+      const updatedMarkdown = '# Shared note\n\nHello from MD Share\n\n![Cover](cover.png)\n\nMore text\n';
+      const markdownState = waitForMessage(
+        socket2,
+        (payload) =>
+          payload.type === 'state' &&
+          typeof payload.markdownSnapshot === 'string' &&
+          payload.markdownSnapshot.includes('More text'),
+      );
+      socket1.send(JSON.stringify({ type: 'markdown', markdown: updatedMarkdown }));
+      await markdownState;
+
       const dirtyInfoResponse = await fetch(`${publicBase}/api/share/${share.token}`);
       expect(dirtyInfoResponse.ok).toBe(true);
       const dirtyInfo = (await dirtyInfoResponse.json()) as { status: string };
@@ -279,6 +291,81 @@ describe('md-share integration', () => {
       socket1?.close();
       socket2?.close();
       socket3?.close();
+      await new Promise<void>((resolve) => adminServer.close(() => resolve()));
+      await new Promise<void>((resolve) => publicServer.close(() => resolve()));
+      service.close();
+    }
+  });
+
+  it('treats expired and revoked shares as read-only while still exposing snapshots', async () => {
+    const notesDir = await makeTempDir('md-share-expired-notes-');
+    const dataDir = await makeTempDir('md-share-expired-data-');
+    const sourcePath = path.join(notesDir, 'read-only-note.md');
+    await fs.writeFile(sourcePath, '# Read only\n\nThis content should still load.\n', 'utf8');
+
+    const config = loadConfig({
+      NOTES_DIR: notesDir,
+      DATA_DIR: dataDir,
+      ADMIN_PORT: '0',
+      PUBLIC_PORT: '0',
+      ADMIN_BASE_URL: 'http://127.0.0.1',
+      PUBLIC_BASE_URL: 'http://127.0.0.1',
+    });
+
+    const db = await openDatabase(config.databasePath);
+    const service = await MdShareService.create(config, db);
+    const { adminServer, publicServer } = createHttpServers(service, config, path.join(process.cwd(), 'dist', 'client'));
+
+    const actualAdminPort = await listen(adminServer);
+    const actualPublicPort = await listen(publicServer);
+    const adminBase = `http://127.0.0.1:${actualAdminPort}`;
+    const publicBase = `http://127.0.0.1:${actualPublicPort}`;
+
+    let expiredSocket: WebSocket | undefined;
+    let revokedSocket: WebSocket | undefined;
+
+    try {
+      const notesResponse = await fetch(`${adminBase}/api/admin/notes`);
+      expect(notesResponse.ok).toBe(true);
+      const notes = (await notesResponse.json()) as Array<{ id: string }>;
+      const [note] = notes;
+      expect(note).toBeTruthy();
+
+      const expiredShare = await service.createShare({
+        noteId: note!.id,
+        expiresAt: Date.now() - 1000,
+      });
+      const expiredInfoResponse = await fetch(`${publicBase}/api/share/${expiredShare.token}`);
+      expect(expiredInfoResponse.ok).toBe(true);
+      const expiredInfo = (await expiredInfoResponse.json()) as { status: string; markdownSnapshot: string };
+      expect(expiredInfo.status).toBe('expired');
+      expect(expiredInfo.markdownSnapshot).toContain('This content should still load.');
+
+      expiredSocket = new WebSocket(`${publicBase.replace('http', 'ws')}/ws/share/${expiredShare.token}`);
+      await once(expiredSocket, 'open');
+      const [expiredCode, expiredReason] = (await once(expiredSocket, 'close')) as [number, Buffer];
+      expect(expiredCode).toBe(4401);
+      expect(expiredReason.toString('utf8')).toContain('share unavailable');
+
+      const revokedShare = await service.createShare({ noteId: note!.id });
+      await service.revokeShare(revokedShare.token);
+
+      const revokedInfoResponse = await fetch(`${publicBase}/api/share/${revokedShare.token}`);
+      expect(revokedInfoResponse.ok).toBe(true);
+      const revokedInfo = (await revokedInfoResponse.json()) as { status: string; markdownSnapshot: string };
+      expect(revokedInfo.status).toBe('revoked');
+      expect(revokedInfo.markdownSnapshot).toContain('This content should still load.');
+
+      revokedSocket = new WebSocket(`${publicBase.replace('http', 'ws')}/ws/share/${revokedShare.token}`);
+      await once(revokedSocket, 'open');
+      const [revokedCode, revokedReason] = (await once(revokedSocket, 'close')) as [number, Buffer];
+      expect(revokedCode).toBe(4401);
+      expect(revokedReason.toString('utf8')).toContain('share unavailable');
+    } finally {
+      expiredSocket?.removeAllListeners();
+      revokedSocket?.removeAllListeners();
+      expiredSocket?.close();
+      revokedSocket?.close();
       await new Promise<void>((resolve) => adminServer.close(() => resolve()));
       await new Promise<void>((resolve) => publicServer.close(() => resolve()));
       service.close();
