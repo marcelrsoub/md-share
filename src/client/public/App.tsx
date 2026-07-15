@@ -5,16 +5,16 @@ import { markdown } from '@codemirror/lang-markdown';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
-import { CircleDot, Settings2, UserRound } from 'lucide-react';
+import { Settings2, UserRound } from 'lucide-react';
 import type { PublicShareInfo } from '../../shared/types.js';
-import { Badge } from '../components/ui/badge.js';
 import { Button } from '../components/ui/button.js';
 import { Card, CardContent, CardTitle } from '../components/ui/card.js';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
 import { Input } from '../components/ui/input.js';
 import { base64ToUint8Array, uint8ArrayToBase64 } from '../shared/binary.js';
+import { resolveMarkdownCodeLanguage } from '../shared/code-languages.js';
 import { setDocumentMetadata } from '../shared/document.js';
-import { fetchJson, formatTimestamp, shareStatusLabel, statusTone } from '../shared/api.js';
+import { fetchJson } from '../shared/api.js';
 import { livePreview } from './live-preview.js';
 
 const STORAGE_KEY = 'md-share.display-name';
@@ -113,7 +113,7 @@ function EditorHost({
         doc: yText.toString(),
         extensions: [
           basicSetup,
-          markdown(),
+          markdown({ codeLanguages: resolveMarkdownCodeLanguage }),
           livePreview({ resolveImageUrl }),
           yCollab(yText, awareness),
           EditorState.readOnly.of(!editable),
@@ -152,15 +152,16 @@ function EditorHost({
             },
             '.cm-cursor': {
               borderLeftColor: 'var(--accent)',
+              borderLeftWidth: '2px',
             },
             '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
               backgroundColor: 'rgba(124, 58, 237, 0.2)',
             },
             '.cm-ySelectionCaret': {
               borderRadius: '999px 999px 999px 0',
-              minHeight: '1.5em',
-              paddingInline: '0.38rem',
-              borderWidth: '2px',
+              minHeight: '1.35em',
+              paddingInline: '0.22rem',
+              borderWidth: '1px',
               boxShadow: '0 0 0 1px rgba(5, 6, 8, 0.4)',
             },
             '.cm-ySelectionCaretDot': {
@@ -543,11 +544,6 @@ export function PublicApp() {
           </div>
 
           <div className="topbar-controls">
-            <Badge variant="outline" className={`tone-${statusTone(currentStatus)}`}>
-              <CircleDot />
-              <span>{shareStatusLabel(currentStatus)}</span>
-            </Badge>
-
             <Button
               variant="icon"
               className="name-chip settings-button"
@@ -615,7 +611,6 @@ export function PublicApp() {
         <section className="workspace-panel public-editor-panel panel">
           <div className="workspace-panel-header">
             <CardTitle>Editor</CardTitle>
-            <span className="muted">{connectionState === 'connected' ? 'Synced' : connectionState}</span>
           </div>
 
           <EditorHost

@@ -40,17 +40,39 @@ describe('collectLivePreviewDecorations', () => {
   });
 
   it('treats fenced code as editor content instead of inline markdown', () => {
-    const decorations = collect(['```ts', 'const value = `not inline`;', '```'].join('\n'));
+    const content = ['```ts', 'const value = `not inline`;', '```'].join('\n');
+    const state = EditorState.create({ doc: content });
+    const decorations = collectLivePreviewDecorations(state.doc);
+    const openingFence = state.doc.line(1);
+    const codeLine = state.doc.line(2);
+    const closingFence = state.doc.line(3);
 
-    expect(decorations.filter((decoration) => decoration.kind === 'codeFence')).toHaveLength(3);
-    expect(decorations).not.toEqual(
+    expect(decorations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: 'syntax',
-          from: 19,
-          to: 20,
+          kind: 'codeFence',
+          className: 'cm-live-code-fence cm-live-code-fence-open',
+          from: openingFence.from,
+          to: openingFence.from,
+        }),
+        expect.objectContaining({ kind: 'codeFence', className: 'cm-live-code-line', from: codeLine.from, to: codeLine.from }),
+        expect.objectContaining({
+          kind: 'codeFence',
+          className: 'cm-live-code-fence cm-live-code-fence-close',
+          from: closingFence.from,
+          to: closingFence.from,
         }),
       ]),
     );
+    expect(decorations.filter((decoration) => decoration.className?.includes('cm-live-code-fence'))).toHaveLength(2);
+    expect(decorations.filter((decoration) => decoration.className === 'cm-live-code-line')).toHaveLength(1);
+    expect(
+      decorations.filter(
+        (decoration) =>
+          decoration.kind === 'syntax' &&
+          decoration.from >= codeLine.from &&
+          decoration.to <= codeLine.to,
+      ),
+    ).toHaveLength(0);
   });
 });

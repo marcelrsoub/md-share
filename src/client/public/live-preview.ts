@@ -153,11 +153,12 @@ export function collectLivePreviewDecorations(
 
     const fence = text.match(/^```([a-zA-Z0-9_-]+)?\s*$/);
     if (fence) {
+      const isOpeningFence = !inCodeBlock;
       ranges.push({
         kind: 'codeFence',
         from: line.from,
         to: line.from,
-        className: 'cm-live-code-fence',
+        className: `cm-live-code-fence ${isOpeningFence ? 'cm-live-code-fence-open' : 'cm-live-code-fence-close'}`,
       });
       ranges.push({
         kind: 'syntax',

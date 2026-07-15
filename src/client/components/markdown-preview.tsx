@@ -187,6 +187,21 @@ function renderInline(text: string, resolveImageUrl?: (source: string) => string
   return nodes;
 }
 
+function renderInlineWithBreaks(text: string, resolveImageUrl?: (source: string) => string | null, prefix = 'inline-breaks'): ReactNode[] {
+  const lines = text.split('\n');
+  const nodes: ReactNode[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    nodes.push(...renderInline(line, resolveImageUrl, `${prefix}-${index}`));
+    if (index < lines.length - 1) {
+      nodes.push(<br key={`${prefix}-br-${index}`} />);
+    }
+  }
+
+  return nodes;
+}
+
 function parseMarkdownBlocks(content: string): MarkdownBlock[] {
   const normalized = content.replace(/\r\n?/g, '\n');
   const lines = normalized.split('\n');
@@ -306,10 +321,25 @@ export function MarkdownPreview({ content, className, emptyLabel = 'Nothing to p
         }
 
         if (block.type === 'blockquote') {
+          const paragraphs = block.text
+            .split(/\n{2,}/)
+            .map((paragraph) => paragraph.trim())
+            .filter(Boolean);
+
           return (
             <blockquote key={`blockquote-${blockIndex}`} className="markdown-blockquote">
               <Quote className="markdown-blockquote-icon" />
-              <p>{renderInline(block.text, resolveImageUrl, `blockquote-${blockIndex}`)}</p>
+              <div className="markdown-blockquote-body">
+                {paragraphs.length > 0 ? (
+                  paragraphs.map((paragraph, paragraphIndex) => (
+                    <p key={`blockquote-${blockIndex}-${paragraphIndex}`}>
+                      {renderInlineWithBreaks(paragraph, resolveImageUrl, `blockquote-${blockIndex}-${paragraphIndex}`)}
+                    </p>
+                  ))
+                ) : (
+                  <p>{renderInlineWithBreaks(block.text, resolveImageUrl, `blockquote-${blockIndex}`)}</p>
+                )}
+              </div>
             </blockquote>
           );
         }
@@ -320,15 +350,17 @@ export function MarkdownPreview({ content, className, emptyLabel = 'Nothing to p
 
         if (block.type === 'code') {
           return (
-            <pre key={`code-${blockIndex}`} className="markdown-codeblock">
-              <div className="markdown-codebar">
+            <figure key={`code-${blockIndex}`} className="markdown-codeblock" data-language={block.language || undefined}>
+              <figcaption className="markdown-codebar">
                 <span className="markdown-codebadge">
                   <SquareTerminal />
                   <span>{block.language || 'code'}</span>
                 </span>
-              </div>
-              <code>{block.text}</code>
-            </pre>
+              </figcaption>
+              <pre className="markdown-codebody">
+                <code>{block.text}</code>
+              </pre>
+            </figure>
           );
         }
 
