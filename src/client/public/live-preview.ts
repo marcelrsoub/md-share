@@ -1,5 +1,7 @@
 import { StateField, type Extension, type Range } from '@codemirror/state';
-import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view';
+import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view';
+import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
+import { parseMarkdownTable, type MarkdownTableData } from '../shared/markdown-table.js';
 
 export type LivePreviewDecorationKind =
   | 'heading'
@@ -8,7 +10,8 @@ export type LivePreviewDecorationKind =
   | 'hr'
   | 'codeFence'
   | 'syntax'
-  | 'image';
+  | 'image'
+  | 'table';
 
 export interface LivePreviewDecorationRange {
   kind: LivePreviewDecorationKind;
@@ -19,10 +22,12 @@ export interface LivePreviewDecorationRange {
   alt?: string;
   title?: string;
   resolvedSource?: string | null;
+  table?: MarkdownTableData;
 }
 
-interface LivePreviewOptions {
+export interface LivePreviewOptions {
   resolveImageUrl?: (source: string) => string | null;
+  activeLineNumber?: number;
 }
 
 class ImagePreviewWidget extends WidgetType {
@@ -33,6 +38,10 @@ class ImagePreviewWidget extends WidgetType {
     private readonly title?: string,
   ) {
     super();
+  }
+
+  override get estimatedHeight(): number {
+    return 180;
   }
 
   override eq(other: ImagePreviewWidget): boolean {
@@ -60,7 +69,7 @@ class ImagePreviewWidget extends WidgetType {
     image.className = 'markdown-image';
     image.src = this.resolvedSource;
     image.alt = this.alt;
-    image.loading = 'lazy';
+    image.loading = 'eager';
     image.decoding = 'async';
     if (this.title) {
       image.title = this.title;
@@ -74,6 +83,92 @@ class ImagePreviewWidget extends WidgetType {
     });
     wrapper.append(image);
     return wrapper;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+function stripTableInlineSyntax(value: string): string {
+  return value
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\*\*|__|[*_`~]/g, '');
+}
+
+class TablePreviewWidget extends WidgetType {
+  constructor(private readonly table: MarkdownTableData) {
+    super();
+  }
+
+  override get estimatedHeight(): number {
+    return Math.max(120, (this.table.rows.length + 1) * 48);
+  }
+
+  override eq(other: TablePreviewWidget): boolean {
+    return JSON.stringify(other.table) === JSON.stringify(this.table);
+  }
+
+  override toDOM(): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cm-live-table markdown-table-wrap';
+
+    const tableElement = document.createElement('table');
+    tableElement.className = 'markdown-table';
+    const head = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const [columnIndex, header] of this.table.headers.entries()) {
+      const cell = document.createElement('th');
+      cell.scope = 'col';
+      cell.textContent = stripTableInlineSyntax(header);
+      cell.style.textAlign = this.table.alignments[columnIndex] ?? '';
+      headRow.append(cell);
+    }
+    head.append(headRow);
+    tableElement.append(head);
+
+    if (this.table.rows.length > 0) {
+      const body = document.createElement('tbody');
+      for (const row of this.table.rows) {
+        const rowElement = document.createElement('tr');
+        for (const [columnIndex, value] of row.entries()) {
+          const cell = document.createElement('td');
+          cell.textContent = stripTableInlineSyntax(value);
+          cell.style.textAlign = this.table.alignments[columnIndex] ?? '';
+          rowElement.append(cell);
+        }
+        body.append(rowElement);
+      }
+      tableElement.append(body);
+    }
+
+    wrapper.append(tableElement);
+    return wrapper;
+  }
+
+  override ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+class TextMarkerWidget extends WidgetType {
+  constructor(
+    private readonly text: string,
+    private readonly className: string,
+  ) {
+    super();
+  }
+
+  override eq(other: TextMarkerWidget): boolean {
+    return other.text === this.text && other.className === this.className;
+  }
+
+  override toDOM(): HTMLElement {
+    const marker = document.createElement('span');
+    marker.className = this.className;
+    marker.textContent = this.text;
+    return marker;
   }
 
   override ignoreEvent(): boolean {
@@ -95,22 +190,20 @@ function splitLinkParts(value: string): { source: string; title?: string } {
 }
 
 function addInlineSyntaxMarks(line: string, lineStart: number, ranges: LivePreviewDecorationRange[]): void {
-  const patterns = [/(\*\*)(?=\S)/g, /(?<=\S)(\*\*)/g, /(\*)(?=\S)/g, /(?<=\S)(\*)/g, /(`)/g, /(\[|\]|\(|\))/g];
+  const syntaxPattern = /(\*\*|(?<!\*)\*(?!\*)|`|\[|\]|\(|\))/g;
 
-  for (const pattern of patterns) {
-    for (const match of line.matchAll(pattern)) {
-      const text = match[0];
-      const index = match.index ?? -1;
-      if (index < 0 || !text) {
-        continue;
-      }
-      ranges.push({
-        kind: 'syntax',
-        from: lineStart + index,
-        to: lineStart + index + text.length,
-        className: 'cm-live-syntax',
-      });
+  for (const match of line.matchAll(syntaxPattern)) {
+    const text = match[0];
+    const index = match.index ?? -1;
+    if (index < 0 || !text) {
+      continue;
     }
+    ranges.push({
+      kind: 'syntax',
+      from: lineStart + index,
+      to: lineStart + index + text.length,
+      className: 'cm-live-syntax',
+    });
   }
 }
 
@@ -134,7 +227,7 @@ function addImageWidgets(line: string, lineStart: number, ranges: LivePreviewDec
       source,
       alt,
       title,
-      resolvedSource: options.resolveImageUrl ? options.resolveImageUrl(source) : source,
+      resolvedSource: resolveMarkdownImageSource(source, options.resolveImageUrl),
     });
   }
 }
@@ -145,43 +238,68 @@ export function collectLivePreviewDecorations(
 ): LivePreviewDecorationRange[] {
   const ranges: LivePreviewDecorationRange[] = [];
   let inCodeBlock = false;
+  const sourceLines = Array.from({ length: doc.lines }, (_, index) => doc.line(index + 1).text);
 
   for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
     const line = doc.line(lineNumber);
     const text = line.text;
     const trimmed = text.trim();
+    const isActiveLine = options.activeLineNumber === lineNumber;
+
+    const parsedTable = inCodeBlock ? null : parseMarkdownTable(sourceLines, lineNumber - 1);
+    if (parsedTable) {
+      const lastTableLineNumber = parsedTable.nextIndex;
+      const activeLineInTable =
+        options.activeLineNumber != null &&
+        options.activeLineNumber >= lineNumber &&
+        options.activeLineNumber <= lastTableLineNumber;
+      if (!activeLineInTable) {
+        ranges.push({
+          kind: 'table',
+          from: line.from,
+          to: doc.line(lastTableLineNumber).to,
+          table: parsedTable.table,
+        });
+      }
+      lineNumber = lastTableLineNumber;
+      continue;
+    }
 
     const fence = text.match(/^```([a-zA-Z0-9_-]+)?\s*$/);
     if (fence) {
       const isOpeningFence = !inCodeBlock;
-      ranges.push({
-        kind: 'codeFence',
-        from: line.from,
-        to: line.from,
-        className: `cm-live-code-fence ${isOpeningFence ? 'cm-live-code-fence-open' : 'cm-live-code-fence-close'}`,
-      });
-      ranges.push({
-        kind: 'syntax',
-        from: line.from,
-        to: line.to,
-        className: 'cm-live-syntax',
-      });
+      if (!isActiveLine) {
+        ranges.push({
+          kind: 'codeFence',
+          from: line.from,
+          to: line.from,
+          className: `cm-live-code-fence ${isOpeningFence ? 'cm-live-code-fence-open' : 'cm-live-code-fence-close'}`,
+        });
+        ranges.push({
+          kind: 'syntax',
+          from: line.from,
+          to: line.to,
+          className: 'cm-live-syntax',
+        });
+      }
       inCodeBlock = !inCodeBlock;
       continue;
     }
 
     if (inCodeBlock) {
-      ranges.push({
-        kind: 'codeFence',
-        from: line.from,
-        to: line.from,
-        className: 'cm-live-code-line',
-      });
+      if (!isActiveLine) {
+        ranges.push({
+          kind: 'codeFence',
+          from: line.from,
+          to: line.from,
+          className: 'cm-live-code-line',
+        });
+      }
       continue;
     }
 
     const heading = text.match(/^(#{1,6})\s+(.*)$/);
-    if (heading) {
+    if (heading && !isActiveLine) {
       const level = heading[1].length;
       ranges.push({
         kind: 'heading',
@@ -199,7 +317,7 @@ export function collectLivePreviewDecorations(
       continue;
     }
 
-    if (/^>\s?/.test(text)) {
+    if (/^>\s?/.test(text) && !isActiveLine) {
       ranges.push({
         kind: 'blockquote',
         from: line.from,
@@ -218,7 +336,7 @@ export function collectLivePreviewDecorations(
     }
 
     const list = text.match(/^(\s*)([-*+]|(\d+)\.)\s+(.*)$/);
-    if (list) {
+    if (list && !isActiveLine) {
       const markerStart = line.from + (list[1]?.length ?? 0);
       const markerEnd = markerStart + (list[2]?.length ?? 0) + 1;
       ranges.push({
@@ -231,14 +349,31 @@ export function collectLivePreviewDecorations(
         kind: 'syntax',
         from: markerStart,
         to: markerEnd,
-        className: 'cm-live-syntax',
+        className: 'cm-live-list-marker',
+        source: list[3] ? `${list[3]}.` : '•',
       });
-      addInlineSyntaxMarks(list[4] ?? '', markerEnd, ranges);
+      const taskMarker = (list[4] ?? '').match(/^\[([ xX])\]\s+/);
+      if (taskMarker) {
+        ranges.push({
+          kind: 'syntax',
+          from: markerEnd,
+          to: markerEnd + taskMarker[0].length,
+          className: 'cm-live-task-marker',
+          source: taskMarker[1]?.toLowerCase() === 'x' ? '✓' : '',
+        });
+        addInlineSyntaxMarks(
+          (list[4] ?? '').slice(taskMarker[0].length),
+          markerEnd + taskMarker[0].length,
+          ranges,
+        );
+      } else {
+        addInlineSyntaxMarks(list[4] ?? '', markerEnd, ranges);
+      }
       addImageWidgets(text, line.from, ranges, options);
       continue;
     }
 
-    if (/^([-*_])\1\1+\s*$/.test(trimmed)) {
+    if (/^([-*_])\1\1+\s*$/.test(trimmed) && !isActiveLine) {
       ranges.push({
         kind: 'hr',
         from: line.from,
@@ -254,8 +389,10 @@ export function collectLivePreviewDecorations(
       continue;
     }
 
-    addInlineSyntaxMarks(text, line.from, ranges);
-    addImageWidgets(text, line.from, ranges, options);
+    if (!isActiveLine) {
+      addInlineSyntaxMarks(text, line.from, ranges);
+      addImageWidgets(text, line.from, ranges, options);
+    }
   }
 
   return ranges.sort((left, right) => left.from - right.from || left.to - right.to);
@@ -269,12 +406,43 @@ function buildLivePreviewDecorations(
 
   for (const range of collectLivePreviewDecorations(doc, options)) {
     if (range.kind === 'image') {
-      decorations.push(Decoration.widget({
+      decorations.push(Decoration.replace({
         widget: new ImagePreviewWidget(range.alt ?? '', range.source ?? '', range.resolvedSource ?? null, range.title),
-        side: 1,
         block: true,
-      }).range(range.to));
-      decorations.push(Decoration.mark({ class: range.className }).range(range.from, range.to));
+      }).range(range.from, range.to));
+      continue;
+    }
+
+    if (range.kind === 'table' && range.table) {
+      decorations.push(
+        Decoration.replace({
+          widget: new TablePreviewWidget(range.table),
+          block: true,
+        }).range(range.from, range.to),
+      );
+      continue;
+    }
+
+    if (range.kind === 'syntax' && range.className === 'cm-live-list-marker') {
+      decorations.push(
+        Decoration.replace({
+          widget: new TextMarkerWidget(range.source ?? '•', 'cm-live-list-marker'),
+        }).range(range.from, range.to),
+      );
+      continue;
+    }
+
+    if (range.kind === 'syntax' && range.className === 'cm-live-task-marker') {
+      decorations.push(
+        Decoration.replace({
+          widget: new TextMarkerWidget(range.source ?? '', 'cm-live-task-marker'),
+        }).range(range.from, range.to),
+      );
+      continue;
+    }
+
+    if (range.kind === 'syntax') {
+      decorations.push(Decoration.replace({}).range(range.from, range.to));
       continue;
     }
 
@@ -289,22 +457,67 @@ function buildLivePreviewDecorations(
   return Decoration.set(decorations, true);
 }
 
-export function livePreview(options: LivePreviewOptions = {}): Extension {
-  const decorations = StateField.define<DecorationSet>({
-    create(state) {
-      return buildLivePreviewDecorations(state.doc, options);
-    },
-    update(value, transaction) {
-      if (!transaction.docChanged) {
-        return value.map(transaction.changes);
+interface LivePreviewState {
+  decorations: DecorationSet;
+  activeLineNumber: number;
+}
+
+const imageMeasurementPlugin = ViewPlugin.fromClass(
+  class {
+    private readonly observer: ResizeObserver | null;
+
+    constructor(private readonly view: EditorView) {
+      this.observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => view.requestMeasure());
+      this.observeImages();
+    }
+
+    update(update: ViewUpdate): void {
+      if (update.docChanged || update.viewportChanged || update.selectionSet) {
+        this.observeImages();
+      }
+    }
+
+    destroy(): void {
+      this.observer?.disconnect();
+    }
+
+    private observeImages(): void {
+      if (!this.observer) {
+        return;
       }
 
-      return buildLivePreviewDecorations(transaction.state.doc, options);
+      this.observer.disconnect();
+      for (const widget of this.view.dom.querySelectorAll('.cm-live-image, .cm-live-table')) {
+        this.observer.observe(widget);
+      }
+    }
+  },
+);
+
+export function livePreview(options: LivePreviewOptions = {}): Extension {
+  const decorations = StateField.define<LivePreviewState>({
+    create(state) {
+      const activeLineNumber = state.doc.lineAt(state.selection.main.head).number;
+      return {
+        decorations: buildLivePreviewDecorations(state.doc, { ...options, activeLineNumber }),
+        activeLineNumber,
+      };
+    },
+    update(value, transaction) {
+      const activeLineNumber = transaction.state.doc.lineAt(transaction.state.selection.main.head).number;
+      if (!transaction.docChanged && (!transaction.selection || activeLineNumber === value.activeLineNumber)) {
+        return value;
+      }
+
+      return {
+        decorations: buildLivePreviewDecorations(transaction.state.doc, { ...options, activeLineNumber }),
+        activeLineNumber,
+      };
     },
     provide(field) {
-      return EditorView.decorations.from(field);
+      return EditorView.decorations.from(field, (value) => value.decorations);
     },
   });
 
-  return [decorations];
+  return [decorations, imageMeasurementPlugin];
 }

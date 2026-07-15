@@ -1,5 +1,7 @@
 import { Fragment, type ReactNode, useMemo, useState } from 'react';
 import { ExternalLink, ImageOff, Quote, SquareTerminal } from 'lucide-react';
+import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
+import { parseMarkdownTable, type MarkdownTableData } from '../shared/markdown-table.js';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -14,7 +16,19 @@ type MarkdownBlock =
   | { type: 'blockquote'; text: string }
   | { type: 'hr' }
   | { type: 'code'; language: string; text: string }
-  | { type: 'list'; ordered: boolean; items: string[] };
+  | { type: 'table'; table: MarkdownTableData }
+  | { type: 'list'; list: MarkdownListBlock };
+
+interface MarkdownListBlock {
+  ordered: boolean;
+  items: MarkdownListItem[];
+}
+
+interface MarkdownListItem {
+  text: string;
+  taskChecked?: boolean;
+  children: MarkdownListBlock[];
+}
 
 const HEADING_TAGS = {
   1: 'h1',
@@ -34,7 +48,7 @@ interface MarkdownImageProps {
 
 function MarkdownImage({ alt, source, title, resolveImageUrl }: MarkdownImageProps) {
   const [failed, setFailed] = useState(false);
-  const resolvedSource = resolveImageUrl ? resolveImageUrl(source) : source;
+  const resolvedSource = resolveMarkdownImageSource(source, resolveImageUrl);
 
   if (!resolvedSource || failed) {
     return (
@@ -202,18 +216,94 @@ function renderInlineWithBreaks(text: string, resolveImageUrl?: (source: string)
   return nodes;
 }
 
+interface ParsedListLine {
+  indent: number;
+  ordered: boolean;
+  text: string;
+  taskChecked?: boolean;
+}
+
+function parseListLine(line: string): ParsedListLine | null {
+  const match = line.match(/^(\s*)([-*+]|(\d+)\.)\s+(.*)$/);
+  if (!match) {
+    return null;
+  }
+
+  const rawText = match[4] ?? '';
+  const task = rawText.match(/^\[([ xX])\]\s+(.*)$/);
+  return {
+    indent: (match[1] ?? '').replace(/\t/g, '    ').length,
+    ordered: Boolean(match[3]),
+    text: task?.[2] ?? rawText,
+    taskChecked: task ? task[1]?.toLowerCase() === 'x' : undefined,
+  };
+}
+
+function parseListBlock(lines: string[], startIndex: number): { block: MarkdownListBlock; nextIndex: number } {
+  const firstLine = parseListLine(lines[startIndex] ?? '');
+  if (!firstLine) {
+    return { block: { ordered: false, items: [] }, nextIndex: startIndex };
+  }
+
+  const listLines: ParsedListLine[] = [];
+  let index = startIndex;
+  while (index < lines.length) {
+    const current = parseListLine(lines[index] ?? '');
+    if (!current || current.indent < firstLine.indent) {
+      break;
+    }
+    if (current.indent === firstLine.indent && current.ordered !== firstLine.ordered) {
+      break;
+    }
+    listLines.push(current);
+    index += 1;
+  }
+
+  const block: MarkdownListBlock = { ordered: firstLine.ordered, items: [] };
+  const stack: Array<{ indent: number; item: MarkdownListItem }> = [];
+
+  for (const line of listLines) {
+    while (stack.length > 0 && line.indent <= (stack.at(-1)?.indent ?? -1)) {
+      stack.pop();
+    }
+
+    const item: MarkdownListItem = {
+      text: line.text,
+      children: [],
+      ...(line.taskChecked === undefined ? {} : { taskChecked: line.taskChecked }),
+    };
+
+    const parent = stack.at(-1)?.item;
+    if (!parent) {
+      block.items.push(item);
+    } else {
+      let childBlock = parent.children.at(-1);
+      if (!childBlock || childBlock.ordered !== line.ordered) {
+        childBlock = { ordered: line.ordered, items: [] };
+        parent.children.push(childBlock);
+      }
+      childBlock.items.push(item);
+    }
+
+    stack.push({ indent: line.indent, item });
+  }
+
+  return { block, nextIndex: index };
+}
+
 function parseMarkdownBlocks(content: string): MarkdownBlock[] {
   const normalized = content.replace(/\r\n?/g, '\n');
   const lines = normalized.split('\n');
   const blocks: MarkdownBlock[] = [];
   let index = 0;
 
-  const isBlockStart = (line: string): boolean =>
+  const isBlockStart = (line: string, lineIndex: number): boolean =>
     /^#{1,6}\s+/.test(line) ||
     /^```/.test(line) ||
     /^>\s?/.test(line) ||
     /^([-*_])\1\1+\s*$/.test(line.trim()) ||
-    /^(\s*[-*+]\s+|\s*\d+\.\s+)/.test(line);
+    /^(\s*[-*+]\s+|\s*\d+\.\s+)/.test(line) ||
+    Boolean(parseMarkdownTable(lines, lineIndex));
 
   while (index < lines.length) {
     const line = lines[index] ?? '';
@@ -221,6 +311,13 @@ function parseMarkdownBlocks(content: string): MarkdownBlock[] {
 
     if (!trimmed) {
       index += 1;
+      continue;
+    }
+
+    const parsedTable = parseMarkdownTable(lines, index);
+    if (parsedTable) {
+      blocks.push({ type: 'table', table: parsedTable.table });
+      index = parsedTable.nextIndex;
       continue;
     }
 
@@ -263,21 +360,10 @@ function parseMarkdownBlocks(content: string): MarkdownBlock[] {
       continue;
     }
 
-    const listMatch = line.match(/^(\s*)([-*+]|(\d+)\.)\s+(.*)$/);
-    if (listMatch) {
-      const ordered = Boolean(listMatch[3]);
-      const items: string[] = [];
-      while (index < lines.length) {
-        const current = lines[index] ?? '';
-        const currentMatch = current.match(/^(\s*)([-*+]|(\d+)\.)\s+(.*)$/);
-        if (!currentMatch) {
-          break;
-        }
-
-        items.push(currentMatch[4] ?? '');
-        index += 1;
-      }
-      blocks.push({ type: 'list', ordered, items });
+    if (parseListLine(line)) {
+      const parsedList = parseListBlock(lines, index);
+      blocks.push({ type: 'list', list: parsedList.block });
+      index = parsedList.nextIndex;
       continue;
     }
 
@@ -288,7 +374,7 @@ function parseMarkdownBlocks(content: string): MarkdownBlock[] {
       if (!nextLine.trim()) {
         break;
       }
-      if (isBlockStart(nextLine)) {
+      if (isBlockStart(nextLine, index)) {
         break;
       }
       paragraphLines.push(nextLine.trim());
@@ -299,6 +385,71 @@ function parseMarkdownBlocks(content: string): MarkdownBlock[] {
   }
 
   return blocks;
+}
+
+function renderListBlock(
+  block: MarkdownListBlock,
+  resolveImageUrl: ((source: string) => string | null) | undefined,
+  prefix: string,
+): ReactNode {
+  const ListTag: 'ol' | 'ul' = block.ordered ? 'ol' : 'ul';
+  return (
+    <ListTag className={`markdown-list ${block.ordered ? 'is-ordered' : 'is-unordered'}`}>
+      {block.items.map((item, itemIndex) => (
+        <li key={`${prefix}-${itemIndex}`}>
+          {item.taskChecked !== undefined ? (
+            <input
+              className="markdown-task-checkbox"
+              type="checkbox"
+              checked={item.taskChecked}
+              disabled
+              aria-label={item.taskChecked ? 'Completed task' : 'Incomplete task'}
+              readOnly
+            />
+          ) : null}
+          {renderInline(item.text, resolveImageUrl, `${prefix}-${itemIndex}`)}
+          {item.children.map((child, childIndex) =>
+            renderListBlock(child, resolveImageUrl, `${prefix}-${itemIndex}-nested-${childIndex}`),
+          )}
+        </li>
+      ))}
+    </ListTag>
+  );
+}
+
+function renderTableBlock(
+  table: MarkdownTableData,
+  resolveImageUrl: ((source: string) => string | null) | undefined,
+  prefix: string,
+): ReactNode {
+  return (
+    <div className="markdown-table-wrap">
+      <table className="markdown-table">
+        <thead>
+          <tr>
+            {table.headers.map((header, columnIndex) => (
+              <th key={`${prefix}-header-${columnIndex}`} style={{ textAlign: table.alignments[columnIndex] }} scope="col">
+                {renderInline(header, resolveImageUrl, `${prefix}-header-${columnIndex}`)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        {table.rows.length > 0 ? (
+          <tbody>
+            {table.rows.map((row, rowIndex) => (
+              <tr key={`${prefix}-row-${rowIndex}`}>
+                {row.map((cell, columnIndex) => (
+                  <td key={`${prefix}-row-${rowIndex}-cell-${columnIndex}`} style={{ textAlign: table.alignments[columnIndex] }}>
+                    {renderInline(cell, resolveImageUrl, `${prefix}-row-${rowIndex}-cell-${columnIndex}`)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        ) : null}
+      </table>
+    </div>
+  );
 }
 
 export function MarkdownPreview({ content, className, emptyLabel = 'Nothing to preview yet.', resolveImageUrl }: MarkdownPreviewProps) {
@@ -365,14 +516,11 @@ export function MarkdownPreview({ content, className, emptyLabel = 'Nothing to p
         }
 
         if (block.type === 'list') {
-          const ListTag: 'ol' | 'ul' = block.ordered ? 'ol' : 'ul';
-          return (
-            <ListTag key={`list-${blockIndex}`} className={`markdown-list ${block.ordered ? 'is-ordered' : 'is-unordered'}`}>
-              {block.items.map((item, itemIndex) => (
-                <li key={`list-${blockIndex}-${itemIndex}`}>{renderInline(item, resolveImageUrl, `list-${blockIndex}-${itemIndex}`)}</li>
-              ))}
-            </ListTag>
-          );
+          return renderListBlock(block.list, resolveImageUrl, `list-${blockIndex}`);
+        }
+
+        if (block.type === 'table') {
+          return renderTableBlock(block.table, resolveImageUrl, `table-${blockIndex}`);
         }
 
         return (

@@ -39,6 +39,19 @@ describe('collectLivePreviewDecorations', () => {
     });
   });
 
+  it('preserves ordered and unordered markers in rendered list lines', () => {
+    const decorations = collect(['- unordered', '12. ordered', '- [x] done', '- [ ] todo'].join('\n'));
+
+    expect(decorations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'syntax', className: 'cm-live-list-marker', source: '•' }),
+        expect.objectContaining({ kind: 'syntax', className: 'cm-live-list-marker', source: '12.' }),
+        expect.objectContaining({ kind: 'syntax', className: 'cm-live-task-marker', source: '✓' }),
+        expect.objectContaining({ kind: 'syntax', className: 'cm-live-task-marker', source: '' }),
+      ]),
+    );
+  });
+
   it('treats fenced code as editor content instead of inline markdown', () => {
     const content = ['```ts', 'const value = `not inline`;', '```'].join('\n');
     const state = EditorState.create({ doc: content });
@@ -74,5 +87,45 @@ describe('collectLivePreviewDecorations', () => {
           decoration.to <= codeLine.to,
       ),
     ).toHaveLength(0);
+  });
+
+  it('reveals only the selected line while keeping other lines rendered', () => {
+    const content = ['# Heading', '**emphasis**', '- item'].join('\n');
+    const state = EditorState.create({ doc: content });
+    const decorations = collectLivePreviewDecorations(state.doc, { activeLineNumber: 2 });
+    const activeLine = state.doc.line(2);
+
+    expect(
+      decorations.some(
+        (decoration) => decoration.from >= activeLine.from && decoration.to <= activeLine.to,
+      ),
+    ).toBe(false);
+    expect(decorations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'heading', from: state.doc.line(1).from, to: state.doc.line(1).from }),
+        expect.objectContaining({ kind: 'list', from: state.doc.line(3).from, to: state.doc.line(3).from }),
+      ]),
+    );
+  });
+
+  it('replaces a table block while keeping its source available on active lines', () => {
+    const content = ['| Name | Status |', '| :--- | ---: |', '| MD Share | Ready |', '', '# After'].join('\n');
+    const state = EditorState.create({ doc: content });
+    const table = collectLivePreviewDecorations(state.doc);
+
+    expect(table).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'table',
+          from: state.doc.line(1).from,
+          to: state.doc.line(3).to,
+          table: expect.objectContaining({ headers: ['Name', 'Status'], rows: [['MD Share', 'Ready']] }),
+        }),
+      ]),
+    );
+
+    expect(
+      collectLivePreviewDecorations(state.doc, { activeLineNumber: 2 }).some((decoration) => decoration.kind === 'table'),
+    ).toBe(false);
   });
 });

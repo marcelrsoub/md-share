@@ -21,6 +21,7 @@ import { Input } from '../components/ui/input.js';
 import { Separator } from '../components/ui/separator.js';
 import { Toaster, toast } from '../components/ui/toast.js';
 import { MarkdownPreview } from '../components/markdown-preview.js';
+import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatBytes, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
@@ -663,7 +664,9 @@ export function AdminApp() {
                     <MarkdownPreview
                       content={selectedPreview.content || selectedPreview.excerpt || ''}
                       emptyLabel="This note is empty."
-                      resolveImageUrl={(source) => buildAdminAssetUrl(selectedPreview.id, source)}
+                      resolveImageUrl={(source) =>
+                        resolveMarkdownImageSource(source, (localSource) => buildAdminAssetUrl(selectedPreview.id, localSource))
+                      }
                     />
                   ) : null}
                   {!loadingPreview && !selectedPreview ? <p className="muted">Select a note to preview its content.</p> : null}

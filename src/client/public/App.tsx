@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
 import { Settings2, UserRound } from 'lucide-react';
+import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import type { PublicShareInfo } from '../../shared/types.js';
 import { Button } from '../components/ui/button.js';
 import { Card, CardContent, CardTitle } from '../components/ui/card.js';
@@ -123,17 +124,18 @@ function EditorHost({
               color: 'var(--text)',
               caretColor: 'var(--accent)',
               fontSize: '1rem',
-              lineHeight: '1.75',
+              lineHeight: '1.8rem',
             },
             '.cm-scroller': {
               padding: '0',
-              fontFamily: 'var(--font-sans)',
+              fontFamily: 'var(--font-mono)',
             },
             '.cm-content': {
               minHeight: '64vh',
               padding: '22px 24px 84px',
               maxWidth: '76ch',
               margin: '0 auto',
+              lineHeight: '1.8rem',
             },
             '.cm-focused': {
               outline: 'none',
@@ -220,7 +222,7 @@ export function PublicApp() {
       return () => null;
     }
 
-    return (source: string) => buildAssetUrl(token, source);
+    return (source: string) => resolveMarkdownImageSource(source, (localSource) => buildAssetUrl(token, localSource));
   }, [token]);
 
   useEffect(() => {
