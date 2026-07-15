@@ -20,7 +20,7 @@ import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, Dial
 import { Input } from '../components/ui/input.js';
 import { Separator } from '../components/ui/separator.js';
 import { Toaster, toast } from '../components/ui/toast.js';
-import { MarkdownPreview } from '../components/markdown-preview.js';
+import { MarkdownEditor } from '../components/markdown-editor.js';
 import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
@@ -658,12 +658,14 @@ export function AdminApp() {
                   ) : null}
                 </CardHeader>
 
-                <div className="preview-sheet">
+                <div className="preview-sheet preview-editor-sheet">
                   {loadingPreview ? <p className="muted">Loading preview...</p> : null}
                   {!loadingPreview && selectedPreview ? (
-                    <MarkdownPreview
+                    <MarkdownEditor
                       content={selectedPreview.content || selectedPreview.excerpt || ''}
-                      emptyLabel="This note is empty."
+                      editable={false}
+                      className="editor-host-admin-preview is-readonly"
+                      staticPreview
                       resolveImageUrl={(source) =>
                         resolveMarkdownImageSource(source, (localSource) => buildAdminAssetUrl(selectedPreview.id, localSource))
                       }

@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { basicSetup, EditorView } from 'codemirror';
-import { EditorState } from '@codemirror/state';
-import { markdown } from '@codemirror/lang-markdown';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
-import { yCollab } from 'y-codemirror.next';
 import { Settings2, UserRound } from 'lucide-react';
 import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import type { PublicShareInfo } from '../../shared/types.js';
@@ -13,10 +9,9 @@ import { Card, CardContent, CardTitle } from '../components/ui/card.js';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
 import { Input } from '../components/ui/input.js';
 import { base64ToUint8Array, uint8ArrayToBase64 } from '../shared/binary.js';
-import { resolveMarkdownCodeLanguage } from '../shared/code-languages.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson } from '../shared/api.js';
-import { livePreview } from './live-preview.js';
+import { MarkdownEditor } from '../components/markdown-editor.js';
 
 const STORAGE_KEY = 'md-share.display-name';
 const CLIENT_ID_KEY = 'md-share.presence-id';
@@ -86,118 +81,6 @@ function GithubMark() {
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 0.297C5.37 0.297 0 5.667 0 12.297c0 5.302 3.438 9.8 8.205 11.384.6.113.82-.26.82-.577 0-.285-.01-1.04-.016-2.04-3.338.725-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.084-.73.084-.73 1.205.085 1.838 1.238 1.838 1.238 1.07 1.835 2.807 1.305 3.492.998.107-.776.418-1.306.76-1.606-2.665-.304-5.466-1.333-5.466-5.93 0-1.31.469-2.382 1.236-3.223-.124-.303-.536-1.527.117-3.176 0 0 1.008-.322 3.3 1.23a11.48 11.48 0 0 1 6.005 0c2.291-1.552 3.298-1.23 3.298-1.23.653 1.649.242 2.873.12 3.176.77.841 1.235 1.913 1.235 3.223 0 4.609-2.807 5.624-5.48 5.92.43.37.814 1.103.814 2.222 0 1.606-.014 2.896-.014 3.287 0 .322.216.694.825.576C20.565 22.096 24 17.599 24 12.297c0-6.63-5.373-12-12-12Z" />
     </svg>
-  );
-}
-
-function EditorHost({
-  doc,
-  awareness,
-  editable,
-  resolveImageUrl,
-}: {
-  doc: Y.Doc;
-  awareness: Awareness;
-  editable: boolean;
-  resolveImageUrl: (source: string) => string | null;
-}) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!hostRef.current) {
-      return;
-    }
-
-    const yText = doc.getText('content');
-    const view = new EditorView({
-      parent: hostRef.current,
-      state: EditorState.create({
-        doc: yText.toString(),
-        extensions: [
-          basicSetup,
-          markdown({ codeLanguages: resolveMarkdownCodeLanguage }),
-          livePreview({ resolveImageUrl }),
-          yCollab(yText, awareness),
-          EditorState.readOnly.of(!editable),
-          EditorView.theme({
-            '&': {
-              backgroundColor: 'transparent',
-              color: 'var(--text)',
-              caretColor: 'var(--accent)',
-              fontSize: '1rem',
-              lineHeight: '1.8rem',
-            },
-            '.cm-scroller': {
-              padding: '0',
-              fontFamily: 'var(--font-mono)',
-            },
-            '.cm-content': {
-              minHeight: '64vh',
-              padding: '22px 24px 84px',
-              maxWidth: '76ch',
-              margin: '0 auto',
-              lineHeight: '1.8rem',
-            },
-            '.cm-focused': {
-              outline: 'none',
-            },
-            '.cm-content[contenteditable="false"]': {
-              cursor: 'default',
-            },
-            '.cm-gutters': {
-              display: 'none',
-            },
-            '.cm-activeLineGutter': {
-              display: 'none',
-            },
-            '.cm-activeLine': {
-              backgroundColor: 'rgba(255, 255, 255, 0.02)',
-            },
-            '.cm-cursor': {
-              borderLeftColor: 'var(--accent)',
-              borderLeftWidth: '2px',
-            },
-            '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
-              backgroundColor: 'rgba(124, 58, 237, 0.2)',
-            },
-            '.cm-ySelectionCaret': {
-              borderRadius: '999px 999px 999px 0',
-              minHeight: '1.35em',
-              paddingInline: '0.22rem',
-              borderWidth: '1px',
-              boxShadow: '0 0 0 1px rgba(5, 6, 8, 0.4)',
-            },
-            '.cm-ySelectionCaretDot': {
-              display: 'none',
-            },
-            '.cm-ySelectionInfo': {
-              opacity: '1',
-              transform: 'translateY(-2px)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '0.72rem',
-              letterSpacing: '0.02em',
-              borderRadius: '999px',
-              padding: '0.08rem 0.42rem',
-              boxShadow: '0 0 0 1px rgba(5, 6, 8, 0.28)',
-            },
-            '.cm-ySelection': {
-              borderRadius: '0.35rem',
-            },
-          }),
-          EditorView.lineWrapping,
-        ],
-      }),
-    });
-
-    return () => {
-      view.destroy();
-    };
-  }, [awareness, doc, editable, resolveImageUrl]);
-
-  return (
-    <div className={`editor-host editor-host-public${editable ? '' : ' is-readonly'}`}>
-      <div ref={hostRef} />
-      {!editable ? <div className="editor-disabled-overlay">This share is not editable right now.</div> : null}
-    </div>
   );
 }
 
@@ -615,10 +498,13 @@ export function PublicApp() {
             <CardTitle>Editor</CardTitle>
           </div>
 
-          <EditorHost
+          <MarkdownEditor
+            content=""
             doc={docRef}
             awareness={awarenessRef}
             editable={editable}
+            className={`editor-host-public${editable ? '' : ' is-readonly'}`}
+            disabledOverlayLabel="This share is not editable right now."
             resolveImageUrl={resolvePublicImageUrl}
           />
 

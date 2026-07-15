@@ -979,6 +979,15 @@ img {
   scrollbar-gutter: stable;
 }
 
+.preview-editor-sheet {
+  padding: 0;
+  overflow: hidden;
+}
+
+.preview-editor-sheet > .editor-host {
+  min-height: 100%;
+}
+
 .share-list-compact {
   display: grid;
   gap: 6px;
@@ -1122,6 +1131,25 @@ img {
   margin: 0 auto;
   font-size: 1rem;
   line-height: 1.8rem;
+}
+
+.editor-host-admin-preview {
+  min-height: 32rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.editor-host.is-static .cm-content {
+  cursor: default;
+}
+
+.editor-host.is-static .cm-cursor {
+  display: none;
+}
+
+.editor-host.is-static .cm-activeLine {
+  background: transparent;
 }
 
 .editor-host .cm-gutters {
