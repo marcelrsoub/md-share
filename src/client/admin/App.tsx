@@ -241,6 +241,8 @@ export function AdminApp() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareBaseUrlDraft, setShareBaseUrlDraft] = useState('');
+  const [conflictShare, setConflictShare] = useState<ShareSummary | null>(null);
+  const [resolvingConflict, setResolvingConflict] = useState(false);
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
   const tree = useMemo(() => buildNoteTree(notes), [notes]);
@@ -440,6 +442,30 @@ export function AdminApp() {
     }
   }
 
+  async function resolveConflict(resolution: 'keep-editor' | 'keep-file'): Promise<void> {
+    if (!conflictShare) {
+      return;
+    }
+
+    setResolvingConflict(true);
+    try {
+      await fetchJson<ShareSummary>(`/api/admin/shares/${conflictShare.token}/resolve-conflict`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ resolution }),
+      });
+      toast.success(resolution === 'keep-editor' ? 'Editor draft is now the note.' : 'NAS version is now shared.');
+      setConflictShare(null);
+      await loadShares();
+    } catch (resolveError) {
+      toast.error(resolveError instanceof Error ? resolveError.message : 'Failed to resolve conflict');
+    } finally {
+      setResolvingConflict(false);
+    }
+  }
+
   async function copyLink(url: string, nextToast?: { text: string }): Promise<void> {
     const result = await copyTextToClipboard(url);
     if (result.copied) {
@@ -552,6 +578,31 @@ export function AdminApp() {
             </Button>
             <Button onClick={() => void saveSettings()} disabled={!adminConfig || savingConfig}>
               <span>{savingConfig ? 'Saving...' : 'Save settings'}</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={conflictShare != null} onOpenChange={(open) => !open && setConflictShare(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resolve file conflict</DialogTitle>
+            <DialogDescription>
+              The NAS file changed while this shared link had edits. No file was overwritten. Choose which version should become the note.
+            </DialogDescription>
+            <DialogClose disabled={resolvingConflict} />
+          </DialogHeader>
+          <DialogBody>
+            <p className="muted">
+              <strong>{conflictShare?.noteName}</strong>
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => void resolveConflict('keep-file')} disabled={resolvingConflict}>
+              Keep NAS version
+            </Button>
+            <Button onClick={() => void resolveConflict('keep-editor')} disabled={resolvingConflict}>
+              Keep editor draft
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -682,7 +733,10 @@ export function AdminApp() {
 
                 <div className="share-list-compact">
                   {(selectedNote ? selectedShares : shares).map((share) => (
-                    <article key={share.token} className={`share-row-compact${share.status === 'revoked' ? ' is-revoked' : ''}`}>
+                    <article
+                      key={share.token}
+                      className={`share-row-compact${share.status === 'revoked' ? ' is-revoked' : ''}${share.status === 'conflict' ? ' is-conflict' : ''}`}
+                    >
                       <div className="share-row-copy">
                         <div className="share-row-title">
                           <strong>{share.noteName}</strong>
@@ -691,14 +745,20 @@ export function AdminApp() {
                           </Badge>
                         </div>
                         <div className="muted mono share-row-token">{shortToken(share.token)}</div>
+                        {share.status === 'conflict' ? <div className="share-row-conflict-copy">The source file changed. Choose a version to continue.</div> : null}
                       </div>
 
                       <div className="share-row-actions">
                         <Button variant="icon" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link" disabled={share.status === 'revoked'}>
                           <Copy />
                         </Button>
-                        <Button variant="icon" onClick={() => void exportShare(share.token)} aria-label="Export note" disabled={share.status === 'revoked'}>
-                          <Download />
+                        <Button
+                          variant={share.status === 'conflict' ? 'secondary' : 'icon'}
+                          onClick={() => (share.status === 'conflict' ? setConflictShare(share) : void exportShare(share.token))}
+                          aria-label={share.status === 'conflict' ? 'Resolve file conflict' : 'Export note'}
+                          disabled={share.status === 'revoked'}
+                        >
+                          {share.status === 'conflict' ? 'Resolve' : <Download />}
                         </Button>
                         <Button
                           variant="icon"

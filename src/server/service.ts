@@ -8,6 +8,7 @@ import { ensureDirectory } from '../shared/file-ops.js';
 import { generateShareToken, isShareToken } from '../shared/token.js';
 import { hashFile, sha256Hex } from '../shared/hash.js';
 import {
+  assertExistingMarkdownFile,
   findMarkdownFileById,
   resolveMarkdownAsset,
   scanMarkdownFiles,
@@ -34,7 +35,15 @@ const EXPIRATION_SWEEP_MS = 30 * 1000;
 const PERSIST_DEBOUNCE_MS = 500;
 const SHARE_BASE_URL_SETTING_KEY = 'share_base_url';
 
-type UpdateOrigin = string | { source: 'db' | 'persist' | 'export' | 'ws'; connectionId?: string };
+type UpdateOrigin = string | { source: 'db' | 'persist' | 'export' | 'import' | 'ws'; connectionId?: string };
+
+type SyncAction = 'imported' | 'exported' | 'unchanged' | 'missing';
+
+interface SyncResult {
+  row: ShareRow;
+  action: SyncAction;
+  backupPath: string | null;
+}
 
 interface RuntimeClient {
   connectionId: string;
@@ -54,7 +63,6 @@ interface RuntimeState {
   persistTimer: NodeJS.Timeout | null;
   isPersisting: boolean;
   pendingPersist: boolean;
-  exportInFlight: Promise<unknown> | null;
 }
 
 interface CreateShareInput {
@@ -172,10 +180,10 @@ function yStateToText(snapshot: Buffer): string {
 
 function isIgnoredUpdateOrigin(origin: UpdateOrigin | undefined): boolean {
   if (typeof origin === 'string') {
-    return origin === 'db' || origin === 'persist' || origin === 'export';
+    return origin === 'db' || origin === 'persist' || origin === 'export' || origin === 'import';
   }
 
-  return origin?.source === 'db' || origin?.source === 'persist' || origin?.source === 'export';
+  return origin?.source === 'db' || origin?.source === 'persist' || origin?.source === 'export' || origin?.source === 'import';
 }
 
 function getSenderConnectionId(origin: UpdateOrigin | undefined): string | null {
@@ -199,6 +207,7 @@ export class MdShareService {
   private readonly expirationSweepTimer: NodeJS.Timeout;
   private readonly defaultShareBaseUrl: string;
   private shareBaseUrl: string;
+  private readonly syncLocks = new Map<string, Promise<SyncResult>>();
   private isClosing = false;
 
   private constructor(
@@ -466,7 +475,7 @@ export class MdShareService {
 
   async exportShare(token: string, reason: 'manual' | 'interval' | 'disconnect'): Promise<{
     status: 'exported' | 'conflict';
-    backupPath: string;
+    backupPath: string | null;
     conflictCopyPath: string | null;
     exportedAt: number;
   }> {
@@ -475,69 +484,178 @@ export class MdShareService {
       throw new Error('This share has been revoked');
     }
 
+    const result = await this.synchronizeShare(row, true);
+    if (result.action === 'missing') {
+      throw new Error('Source file is missing');
+    }
+
+    return {
+      status: 'exported',
+      backupPath: result.backupPath,
+      conflictCopyPath: null,
+      exportedAt: nowMs(),
+    };
+  }
+
+  async resolveShareConflict(token: string, resolution: 'keep-editor' | 'keep-file'): Promise<ShareSummary> {
+    const row = await this.requireShare(token);
+    if (row.revokedAt != null) {
+      throw new Error('This share has been revoked');
+    }
+    if (row.conflict === 0) {
+      throw new Error('This share has no active conflict');
+    }
+
     const runtime = this.runtimes.get(token);
     if (runtime) {
       await this.persistRuntimeNow(runtime);
     }
 
     const freshRow = await this.refreshShareFromDisk(row);
-    const content = runtime ? runtimeToText(runtime) : yStateToText(freshRow.yState);
+    const sourceSnapshot = await readSourceSnapshot(freshRow.sourcePath);
+    if (!sourceSnapshot) {
+      throw new Error('The source file is missing; restore it before resolving this conflict');
+    }
 
-    const result = await exportMarkdownShare({
-      share: freshRow,
-      notesRoot: this.notesRootRealPath,
-      backupsRoot: this.config.backupsDir,
-      content,
-    });
+    if (resolution === 'keep-editor') {
+      const content = runtime ? runtimeToText(runtime) : yStateToText(freshRow.yState);
+      const result = await exportMarkdownShare({
+        share: freshRow,
+        notesRoot: this.notesRootRealPath,
+        backupsRoot: this.config.backupsDir,
+        content,
+        force: true,
+      });
+      const exportedAt = nowMs();
+      const yState = runtime ? Buffer.from(Y.encodeStateAsUpdate(runtime.doc)) : freshRow.yState;
+      await this.markShareExported(token, freshRow, yState, result.exportedHash, exportedAt);
+    } else {
+      const sourceText = await fs.readFile(sourceSnapshot.realPath, 'utf8');
+      const doc = runtime?.doc ?? new Y.Doc();
+      const text = doc.getText(DOC_NAME);
+      doc.transact(() => {
+        text.delete(0, text.length);
+        if (sourceText) {
+          text.insert(0, sourceText);
+        }
+      }, 'export');
 
-    const exportedAt = nowMs();
-    const yState = runtime
-      ? Buffer.from(Y.encodeStateAsUpdate(runtime.doc))
-      : freshRow.yState;
-
-    if (result.status === 'exported') {
-      const sourceSnapshot = result.sourceSnapshot ?? (await readSourceSnapshot(freshRow.sourcePath));
-      const currentRealPath = sourceSnapshot?.realPath ?? freshRow.sourceRealPath;
-      const currentMtime = sourceSnapshot?.mtimeMs ?? freshRow.sourceMtimeMs;
+      const yState = Buffer.from(Y.encodeStateAsUpdate(doc));
       this.dbStore.updateShare(token, {
         y_state: yState,
-        source_hash: result.exportedHash,
-        source_real_path: currentRealPath,
-        source_mtime_ms: currentMtime,
-        last_exported_at: exportedAt,
-        last_exported_hash: result.exportedHash,
+        source_hash: sourceSnapshot.hash,
+        source_real_path: sourceSnapshot.realPath,
+        source_mtime_ms: sourceSnapshot.mtimeMs,
         dirty: 0,
         conflict: 0,
         conflict_copy_path: null,
         last_error: null,
-        updated_at: exportedAt,
+        updated_at: nowMs(),
       });
-    } else {
-      this.dbStore.updateShare(token, {
-        y_state: yState,
-        last_exported_at: exportedAt,
-        last_exported_hash: result.exportedHash,
-        conflict: 1,
-        dirty: 1,
-        conflict_copy_path: result.conflictCopyPath,
-        last_error: 'Source changed externally; wrote conflict copy instead',
-        updated_at: exportedAt,
-      });
+      const updatedRow = this.dbStore.getShare(token) ?? freshRow;
+      if (runtime) {
+        runtime.row = updatedRow;
+        this.broadcastSnapshot(runtime);
+      }
+      this.broadcastShareState(token);
     }
 
-    const updatedRow = this.dbStore.getShare(token) ?? freshRow;
-    const updatedRuntime = this.runtimes.get(token);
-    if (updatedRuntime) {
-      updatedRuntime.row = updatedRow;
+    const resolved = this.dbStore.getShare(token) ?? freshRow;
+    return summarizeShare(resolved, this.dbStore.countParticipants(token), this.getShareBaseUrl());
+  }
+
+  private async markShareExported(
+    token: string,
+    fallbackRow: ShareRow,
+    yState: Buffer,
+    exportedHash: string,
+    exportedAt: number,
+  ): Promise<void> {
+    const sourceSnapshot = await readSourceSnapshot(fallbackRow.sourcePath);
+    if (!sourceSnapshot) {
+      throw new Error('Source file could not be read after export');
+    }
+
+    this.dbStore.updateShare(token, {
+      y_state: yState,
+      source_hash: exportedHash,
+      source_real_path: sourceSnapshot.realPath,
+      source_mtime_ms: sourceSnapshot.mtimeMs,
+      last_exported_at: exportedAt,
+      last_exported_hash: exportedHash,
+      dirty: 0,
+      conflict: 0,
+      conflict_copy_path: null,
+      last_error: null,
+      updated_at: exportedAt,
+    });
+
+    const updatedRow = this.dbStore.getShare(token) ?? fallbackRow;
+    const runtime = this.runtimes.get(token);
+    if (runtime) {
+      runtime.row = updatedRow;
     }
     this.broadcastShareState(token);
+  }
 
-    return {
-      status: result.status,
-      backupPath: result.backupPath,
-      conflictCopyPath: result.conflictCopyPath,
-      exportedAt,
+  private async markShareImported(
+    token: string,
+    fallbackRow: ShareRow,
+    snapshot: Awaited<ReturnType<typeof readSourceSnapshot>>,
+    sourceText: string,
+  ): Promise<ShareRow> {
+    if (!snapshot) {
+      throw new Error('Source file is missing');
+    }
+
+    const runtime = this.runtimes.get(token);
+    let yState: Buffer;
+    if (runtime) {
+      const text = runtime.text;
+      runtime.doc.transact(() => {
+        text.delete(0, text.length);
+        if (sourceText) {
+          text.insert(0, sourceText);
+        }
+      }, { source: 'import' });
+      yState = Buffer.from(Y.encodeStateAsUpdate(runtime.doc));
+    } else {
+      const doc = new Y.Doc();
+      doc.getText(DOC_NAME).insert(0, sourceText);
+      yState = Buffer.from(Y.encodeStateAsUpdate(doc));
+    }
+
+    const updatedAt = nowMs();
+    this.dbStore.updateShare(token, {
+      y_state: yState,
+      source_hash: snapshot.hash,
+      source_real_path: snapshot.realPath,
+      source_mtime_ms: snapshot.mtimeMs,
+      dirty: 0,
+      conflict: 0,
+      conflict_copy_path: null,
+      last_error: null,
+      updated_at: updatedAt,
+    });
+
+    const updatedRow = this.dbStore.getShare(token) ?? {
+      ...fallbackRow,
+      yState,
+      sourceHash: snapshot.hash,
+      sourceRealPath: snapshot.realPath,
+      sourceMtimeMs: snapshot.mtimeMs,
+      dirty: 0,
+      conflict: 0,
+      conflictCopyPath: null,
+      lastError: null,
+      updatedAt,
     };
+    if (runtime) {
+      runtime.row = updatedRow;
+      this.broadcastSnapshot(runtime);
+    }
+    this.broadcastShareState(token);
+    return updatedRow;
   }
 
   async getPublicSnapshotToken(token: string): Promise<{ exists: boolean; active: boolean }> {
@@ -643,7 +761,7 @@ export class MdShareService {
   async exportDirtyShares(trigger: 'interval' | 'manual' | 'disconnect'): Promise<void> {
     const rows = this.dbStore.listShares();
     for (const row of rows) {
-      if (row.revokedAt != null || row.dirty === 0) {
+      if (row.revokedAt != null || row.dirty === 0 || row.conflict !== 0) {
         continue;
       }
 
@@ -678,7 +796,6 @@ export class MdShareService {
       persistTimer: null,
       isPersisting: false,
       pendingPersist: false,
-      exportInFlight: null,
     };
 
     doc.on('update', (update, origin) => {
@@ -772,16 +889,47 @@ export class MdShareService {
   }
 
   private async refreshShareFromDisk(row: ShareRow): Promise<ShareRow> {
-    if (row.revokedAt != null) {
-      return row;
+    return (await this.synchronizeShare(row, false)).row;
+  }
+
+  /**
+   * The one disk/Yjs synchronization decision used by admin, public, WebSocket,
+   * autosave, and disconnect paths.
+   */
+  private async synchronizeShare(row: ShareRow, forceExport: boolean): Promise<SyncResult> {
+    const existingLock = this.syncLocks.get(row.token);
+    if (existingLock) {
+      return existingLock;
     }
 
-    const snapshot = await readSourceSnapshot(row.sourcePath);
+    const work = this.synchronizeShareUnlocked(row, forceExport);
+    this.syncLocks.set(row.token, work);
+    try {
+      return await work;
+    } finally {
+      if (this.syncLocks.get(row.token) === work) {
+        this.syncLocks.delete(row.token);
+      }
+    }
+  }
+
+  private async synchronizeShareUnlocked(row: ShareRow, forceExport: boolean): Promise<SyncResult> {
+    if (row.revokedAt != null) {
+      return { row, action: 'unchanged', backupPath: null };
+    }
+
+    const runtime = this.runtimes.get(row.token);
+    if (runtime) {
+      await this.persistRuntimeNow(runtime);
+    }
+
+    const current = this.dbStore.getShare(row.token) ?? row;
+    const snapshot = await readSourceSnapshot(current.sourcePath);
     const updatedAt = nowMs();
 
     if (!snapshot) {
-      if (!row.conflict || row.lastError !== 'Source file missing') {
-        this.dbStore.updateShare(row.token, {
+      if (!current.conflict || current.lastError !== 'Source file missing') {
+        this.dbStore.updateShare(current.token, {
           conflict: 1,
           last_error: 'Source file missing',
           updated_at: updatedAt,
@@ -789,55 +937,74 @@ export class MdShareService {
       }
 
       return {
-        ...row,
-        conflict: 1,
-        lastError: 'Source file missing',
-        updatedAt,
+        row: {
+          ...current,
+          conflict: 1,
+          lastError: 'Source file missing',
+          updatedAt,
+        },
+        action: 'missing',
+        backupPath: null,
       };
     }
 
-    if (hasSourceChangedExternally(row, snapshot)) {
-      if (!row.conflict || row.lastError !== 'Source changed externally') {
-        this.dbStore.updateShare(row.token, {
-          conflict: 1,
-          last_error: 'Source changed externally',
+    const safeSource = await assertExistingMarkdownFile(this.notesRootRealPath, current.sourcePath);
+    if (safeSource.realPath !== snapshot.realPath) {
+      throw new Error('Source path changed during synchronization');
+    }
+
+    // Preserve conflict rows written by older versions until the legacy
+    // resolution endpoint explicitly handles them. New synchronization never
+    // creates this state.
+    if (!forceExport && current.conflict !== 0 && current.lastError?.startsWith('Source changed externally')) {
+      return { row: current, action: 'unchanged', backupPath: null };
+    }
+
+    const sourceChanged = hasSourceChangedExternally(current, snapshot);
+    if (sourceChanged && current.dirty === 0) {
+      const sourceText = await fs.readFile(snapshot.realPath, 'utf8');
+      const importedRow = await this.markShareImported(current.token, current, snapshot, sourceText);
+      return { row: importedRow, action: 'imported', backupPath: null };
+    }
+
+    if (current.dirty === 0 && !forceExport) {
+      if (current.conflict || current.lastError || current.sourceMtimeMs !== snapshot.mtimeMs || current.sourceRealPath !== snapshot.realPath) {
+        this.dbStore.updateShare(current.token, {
+          conflict: 0,
+          last_error: null,
+          source_real_path: snapshot.realPath,
+          source_mtime_ms: snapshot.mtimeMs,
           updated_at: updatedAt,
         });
+        return {
+          row: this.dbStore.getShare(current.token) ?? {
+            ...current,
+            conflict: 0,
+            lastError: null,
+            sourceRealPath: snapshot.realPath,
+            sourceMtimeMs: snapshot.mtimeMs,
+            updatedAt,
+          },
+          action: 'unchanged',
+          backupPath: null,
+        };
       }
 
-      return {
-        ...row,
-        conflict: 1,
-        lastError: 'Source changed externally',
-        updatedAt,
-      };
+      return { row: current, action: 'unchanged', backupPath: null };
     }
 
-    const updates: Record<string, unknown> = {};
-    if (row.conflict || row.lastError) {
-      updates.conflict = 0;
-      updates.last_error = null;
-    }
-    if (row.sourceMtimeMs !== snapshot.mtimeMs) {
-      updates.source_mtime_ms = snapshot.mtimeMs;
-    }
-    if (row.sourceRealPath !== snapshot.realPath) {
-      updates.source_real_path = snapshot.realPath;
-    }
-    if (Object.keys(updates).length > 0) {
-      updates.updated_at = updatedAt;
-      this.dbStore.updateShare(row.token, updates);
-      return {
-        ...row,
-        conflict: 0,
-        lastError: null,
-        sourceMtimeMs: snapshot.mtimeMs,
-        sourceRealPath: snapshot.realPath,
-        updatedAt,
-      };
-    }
-
-    return row;
+    const content = runtime ? runtimeToText(runtime) : yStateToText(current.yState);
+    const result = await exportMarkdownShare({
+      share: current,
+      notesRoot: this.notesRootRealPath,
+      backupsRoot: this.config.backupsDir,
+      content,
+    });
+    const exportedAt = nowMs();
+    const yState = runtime ? Buffer.from(Y.encodeStateAsUpdate(runtime.doc)) : current.yState;
+    await this.markShareExported(current.token, current, yState, result.exportedHash, exportedAt);
+    const exportedRow = this.dbStore.getShare(current.token) ?? current;
+    return { row: exportedRow, action: 'exported', backupPath: result.backupPath };
   }
 
   private async requireShare(token: string): Promise<ShareRow> {
@@ -876,6 +1043,12 @@ export class MdShareService {
       status: computeShareStatus(runtime.row),
       lastExportedAt: runtime.row.lastExportedAt,
     });
+  }
+
+  private broadcastSnapshot(runtime: RuntimeState): void {
+    for (const client of runtime.clients.values()) {
+      this.sendSnapshot(runtime, client.socket);
+    }
   }
 
   private broadcastUpdate(runtime: RuntimeState, update: Uint8Array, senderConnectionId: string | null): void {
@@ -1027,7 +1200,7 @@ export class MdShareService {
       });
     }
 
-    if (runtime.clients.size === 0 && runtime.row.revokedAt == null) {
+    if (runtime.clients.size === 0 && runtime.row.revokedAt == null && runtime.row.dirty !== 0 && runtime.row.conflict === 0) {
       void this.exportShare(runtime.row.token, 'disconnect').catch(() => {
         // The admin surface can recover from a failed export on the next manual request.
       });

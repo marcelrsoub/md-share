@@ -139,7 +139,7 @@ describe('path safety', () => {
   });
 });
 
-describe('safe writes and conflict exports', () => {
+describe('safe writes and automatic exports', () => {
   it('writes files atomically', async () => {
     const dir = await makeTempDir('md-share-write-');
     const target = path.join(dir, 'draft.md');
@@ -151,7 +151,7 @@ describe('safe writes and conflict exports', () => {
     expect(await fs.readFile(target, 'utf8')).toBe('second version');
   });
 
-  it('creates backups and conflict copies when the source changed externally', async () => {
+  it('backs up the displaced NAS version and keeps the editor version', async () => {
     const notesRoot = await makeTempDir('md-share-export-notes-');
     const backupsRoot = await makeTempDir('md-share-export-backups-');
     const sourcePath = path.join(notesRoot, 'shared.md');
@@ -175,12 +175,23 @@ describe('safe writes and conflict exports', () => {
       now: new Date('2026-06-29T12:00:00.000Z'),
     });
 
-    expect(result.status).toBe('conflict');
-    expect(result.conflictCopyPath).toBeTruthy();
+    expect(result.status).toBe('exported');
+    expect(result.conflictCopyPath).toBeNull();
     expect(result.backupPath).toContain(path.join(backupsRoot, share.token));
-    expect(await fs.readFile(sourcePath, 'utf8')).toBe('external change');
-    expect(await fs.readFile(result.conflictCopyPath as string, 'utf8')).toBe('edited draft');
+    expect(await fs.readFile(sourcePath, 'utf8')).toBe('edited draft');
     expect(await fs.readFile(result.backupPath, 'utf8')).toBe('external change');
+    expect((await fs.readdir(notesRoot)).filter((name) => name.includes('.conflict-'))).toHaveLength(0);
+
+    await fs.writeFile(sourcePath, 'external change', 'utf8');
+    const repeated = await exportMarkdownShare({
+      share,
+      notesRoot,
+      backupsRoot,
+      content: 'edited draft',
+      now: new Date('2026-06-29T12:05:00.000Z'),
+    });
+    expect(repeated.backupPath).toBe(result.backupPath);
+    expect(await fs.readdir(path.join(backupsRoot, share.token))).toHaveLength(1);
   });
 });
 

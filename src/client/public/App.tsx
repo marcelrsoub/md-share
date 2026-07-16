@@ -498,6 +498,12 @@ export function PublicApp() {
             <CardTitle>Editor</CardTitle>
           </div>
 
+          {currentStatus === 'conflict' ? (
+            <div className="public-conflict-banner" role="alert">
+              This note changed on the NAS while it was being edited. Editing is paused until the owner chooses which version to keep.
+            </div>
+          ) : null}
+
           <MarkdownEditor
             content=""
             doc={docRef}
