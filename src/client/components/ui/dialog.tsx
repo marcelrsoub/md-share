@@ -1,4 +1,4 @@
-import { createContext, useContext, type HTMLAttributes, type ReactNode } from 'react';
+import { createContext, useContext, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Button } from './button.js';
 
@@ -64,7 +64,7 @@ export function DialogFooter({ className, ...props }: HTMLAttributes<HTMLDivElem
   return <div className={['settings-dialog-footer', className].filter(Boolean).join(' ')} {...props} />;
 }
 
-export function DialogClose({ className, ...props }: HTMLAttributes<HTMLButtonElement>) {
+export function DialogClose({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   const context = useContext(DialogContext);
   return (
     <Button

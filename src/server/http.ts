@@ -18,6 +18,10 @@ const updateAdminConfigBodySchema = z.object({
   shareBaseUrl: z.union([z.string(), z.null()]),
 });
 
+const resolveShareConflictBodySchema = z.object({
+  resolution: z.enum(['keep-editor', 'keep-file']),
+});
+
 const tokenSchema = z.string().min(1);
 const assetPathSchema = z.string().min(1);
 
@@ -218,6 +222,24 @@ export function createHttpServers(service: MdShareService, config: AppConfig, cl
 
       const result = await service.exportShare(token.data, 'manual');
       res.json(result);
+    }),
+  );
+
+  adminApp.post(
+    '/api/admin/shares/:token/resolve-conflict',
+    asyncHandler(async (req, res) => {
+      const token = tokenSchema.safeParse(req.params.token);
+      if (!token.success) {
+        return jsonError(res, 400, 'Invalid share token');
+      }
+
+      const body = resolveShareConflictBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return jsonError(res, 400, 'Choose whether to keep the editor or NAS version');
+      }
+
+      const share = await service.resolveShareConflict(token.data, body.data.resolution);
+      res.json(share);
     }),
   );
 

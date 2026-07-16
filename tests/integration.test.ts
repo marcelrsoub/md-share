@@ -77,7 +77,7 @@ afterEach(async () => {
 });
 
 describe('md-share integration', () => {
-  it('creates shares, syncs edits, exports safely, and writes conflict copies', async () => {
+  it('creates shares, synchronizes edits, and keeps NAS conflicts internal', async () => {
     const notesDir = await makeTempDir('md-share-int-notes-');
     const dataDir = await makeTempDir('md-share-int-data-');
     const sourcePath = path.join(notesDir, 'shared-note.md');
@@ -234,13 +234,13 @@ describe('md-share integration', () => {
       const dirtyInfoResponse = await fetch(`${publicBase}/api/share/${share.token}`);
       expect(dirtyInfoResponse.ok).toBe(true);
       const dirtyInfo = (await dirtyInfoResponse.json()) as { status: string };
-      expect(dirtyInfo.status).toBe('dirty');
+      expect(dirtyInfo.status).toBe('active');
 
       socket3 = new WebSocket(`${publicBase.replace('http', 'ws')}/ws/share/${share.token}`);
       await once(socket3, 'open');
-      const readyAfterDirty = waitForMessage(socket3, (payload) => payload.type === 'ready' && payload.status === 'dirty');
+      const readyAfterSync = waitForMessage(socket3, (payload) => payload.type === 'ready' && payload.status === 'active');
       socket3.send(JSON.stringify({ type: 'hello', displayName: 'Charlie' }));
-      await readyAfterDirty;
+      await readyAfterSync;
 
       const exportResponse = await fetch(`${adminBase}/api/admin/shares/${share.token}/export`, {
         method: 'POST',
@@ -255,15 +255,52 @@ describe('md-share integration', () => {
 
       await fs.writeFile(sourcePath, 'external edit\n', 'utf8');
 
-      const conflictResponse = await fetch(`${adminBase}/api/admin/shares/${share.token}/export`, {
+      const importedInfoResponse = await fetch(`${publicBase}/api/share/${share.token}`);
+      expect(importedInfoResponse.ok).toBe(true);
+      const importedInfo = (await importedInfoResponse.json()) as { status: string };
+      expect(importedInfo.status).toBe('active');
+      expect(await fs.readFile(sourcePath, 'utf8')).toBe('external edit\n');
+      expect((await fs.readdir(notesDir)).filter((name) => name.includes('.conflict-'))).toHaveLength(0);
+
+      const overlappingDoc = new Y.Doc();
+      overlappingDoc.getText('content').insert(0, 'external edit\nmd-share edit\n');
+      socket1.send(
+        JSON.stringify({
+          type: 'update',
+          update: Buffer.from(Y.encodeStateAsUpdate(overlappingDoc)).toString('base64'),
+        }),
+      );
+      await waitForMessage(socket2, (payload) => payload.type === 'update');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      await fs.writeFile(sourcePath, 'NAS overlap\n', 'utf8');
+
+      const overlapExportResponse = await fetch(`${adminBase}/api/admin/shares/${share.token}/export`, {
         method: 'POST',
       });
-      expect(conflictResponse.ok).toBe(true);
-      const conflictResult = await conflictResponse.json();
-      expect(conflictResult.status).toBe('conflict');
-      expect(await fs.readFile(sourcePath, 'utf8')).toBe('external edit\n');
-      expect(conflictResult.conflictCopyPath).toContain('.conflict-');
-      expect(await fs.readFile(conflictResult.conflictCopyPath, 'utf8')).toContain('More text');
+      expect(overlapExportResponse.ok).toBe(true);
+      const overlapExportResult = (await overlapExportResponse.json()) as {
+        status: string;
+        backupPath: string | null;
+        conflictCopyPath: string | null;
+      };
+      expect(overlapExportResult.status).toBe('exported');
+      expect(overlapExportResult.conflictCopyPath).toBeNull();
+      expect(overlapExportResult.backupPath).toContain(path.join(dataDir, 'backups', share.token));
+      expect(await fs.readFile(sourcePath, 'utf8')).toContain('md-share edit');
+      expect(await fs.readFile(overlapExportResult.backupPath as string, 'utf8')).toBe('NAS overlap\n');
+
+      const backupPath = overlapExportResult.backupPath;
+      const backupsAfterOverlap = await fs.readdir(path.dirname(backupPath as string));
+      await service.exportDirtyShares('interval');
+      await service.exportDirtyShares('disconnect');
+      expect((await fs.readdir(notesDir)).filter((name) => name.includes('.conflict-'))).toHaveLength(0);
+      expect(await fs.readdir(path.dirname(backupPath as string))).toEqual(backupsAfterOverlap);
+
+      await fs.writeFile(sourcePath, 'NAS version wins\n', 'utf8');
+      const refreshedSharesResponse = await fetch(`${adminBase}/api/admin/shares`);
+      expect(refreshedSharesResponse.ok).toBe(true);
+      expect(((await refreshedSharesResponse.json()) as ShareSummary[])[0]?.status).toBe('active');
+      expect(await fs.readFile(sourcePath, 'utf8')).toBe('NAS version wins\n');
 
       const socket1Closed = once(socket1, 'close');
       const socket2Closed = once(socket2, 'close');
@@ -283,5 +320,54 @@ describe('md-share integration', () => {
       await new Promise<void>((resolve) => publicServer.close(() => resolve()));
       service.close();
     }
+  });
+
+  it('imports local edits and resolves dirty exports after restart without a runtime', async () => {
+    const notesDir = await makeTempDir('md-share-restart-notes-');
+    const dataDir = await makeTempDir('md-share-restart-data-');
+    const sourcePath = path.join(notesDir, 'restart.md');
+    await fs.writeFile(sourcePath, '# original\n', 'utf8');
+
+    const config = loadConfig({
+      NOTES_DIR: notesDir,
+      DATA_DIR: dataDir,
+      ADMIN_BASE_URL: 'http://127.0.0.1',
+      PUBLIC_BASE_URL: 'http://127.0.0.1',
+    });
+    const db1 = await openDatabase(config.databasePath);
+    const service1 = await MdShareService.create(config, db1);
+    const [note] = await service1.listNotes();
+    const share = await service1.createShare({ noteId: note.id });
+    service1.close();
+
+    await fs.writeFile(sourcePath, '# local edit after sharing\n', 'utf8');
+    const db2 = await openDatabase(config.databasePath);
+    const service2 = await MdShareService.create(config, db2);
+    const importedShares = await service2.listShares();
+    expect(importedShares[0]?.status).toBe('active');
+
+    const importedRow = db2.prepare('SELECT y_state FROM shares WHERE token = ?').get(share.token) as { y_state: Buffer };
+    const importedDoc = new Y.Doc();
+    Y.applyUpdate(importedDoc, importedRow.y_state);
+    expect(importedDoc.getText('content').toString()).toBe('# local edit after sharing\n');
+
+    const sharedDoc = new Y.Doc();
+    sharedDoc.getText('content').insert(0, '# md-share wins\n');
+    db2.prepare('UPDATE shares SET y_state = ?, dirty = 1 WHERE token = ?').run(
+      Buffer.from(Y.encodeStateAsUpdate(sharedDoc)),
+      share.token,
+    );
+    await fs.writeFile(sourcePath, '# NAS edit too\n', 'utf8');
+
+    await service2.exportDirtyShares('interval');
+    expect(await fs.readFile(sourcePath, 'utf8')).toBe('# md-share wins\n');
+    const backupDir = path.join(config.backupsDir, share.token);
+    const backupFiles = await fs.readdir(backupDir);
+    expect(backupFiles).toHaveLength(1);
+    expect(await fs.readFile(path.join(backupDir, backupFiles[0]), 'utf8')).toBe('# NAS edit too\n');
+
+    await service2.exportDirtyShares('disconnect');
+    expect(await fs.readdir(backupDir)).toEqual(backupFiles);
+    service2.close();
   });
 });
