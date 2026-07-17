@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
-import { Settings2, UserRound } from 'lucide-react';
+import { AlertTriangle, Radio, Settings2, UserRound, UsersRound } from 'lucide-react';
 import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import type { PublicShareInfo } from '../../shared/types.js';
 import { Button } from '../components/ui/button.js';
@@ -10,12 +10,12 @@ import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, Dial
 import { Input } from '../components/ui/input.js';
 import { base64ToUint8Array, uint8ArrayToBase64 } from '../shared/binary.js';
 import { setDocumentMetadata } from '../shared/document.js';
-import { fetchJson } from '../shared/api.js';
+import { fetchJson, shareStatusLabel, statusTone } from '../shared/api.js';
+import { GITHUB_REPO_URL } from '../shared/app-meta.js';
 import { MarkdownEditor } from '../components/markdown-editor.js';
 
 const STORAGE_KEY = 'md-share.display-name';
 const CLIENT_ID_KEY = 'md-share.presence-id';
-const GITHUB_REPO_URL = 'https://github.com/marcelrsoub/md-share';
 const PRESENCE_PALETTE = [
   { color: '#7c3aed', light: 'rgba(124, 58, 237, 0.22)' },
   { color: '#0ea5e9', light: 'rgba(14, 165, 233, 0.22)' },
@@ -68,6 +68,29 @@ function buildWebSocketUrl(token: string): string {
 
 function isEditableShareStatus(status: PublicShareInfo['status'] | null | undefined): boolean {
   return status === 'active' || status === 'dirty';
+}
+
+function connectionLabel(state: 'idle' | 'connecting' | 'connected' | 'closed', status: PublicShareInfo['status']): string {
+  if (status === 'conflict') {
+    return 'Editing paused';
+  }
+  if (status === 'expired' || status === 'revoked') {
+    return shareStatusLabel(status);
+  }
+  if (state === 'connected') {
+    return 'Live and synced';
+  }
+  if (state === 'connecting' || state === 'idle') {
+    return 'Connecting…';
+  }
+  return 'Connection closed';
+}
+
+function connectionTone(state: 'idle' | 'connecting' | 'connected' | 'closed', status: PublicShareInfo['status']): string {
+  if (status === 'conflict' || status === 'expired' || status === 'revoked') {
+    return `tone-${statusTone(status)}`;
+  }
+  return state === 'connected' ? 'tone-good' : state === 'closed' ? 'tone-bad' : 'tone-neutral';
 }
 
 function buildAssetUrl(token: string, sourcePath: string): string {
@@ -424,17 +447,34 @@ export function PublicApp() {
     <div className="app-shell app-shell-public">
       <header className="public-topbar panel">
         <CardContent className="panel-tight topbar-block">
-          <div className="topbar-copy">
-            <CardTitle>{info?.noteName ?? 'Shared note'}</CardTitle>
+          <div className="brand-lockup">
+            <img className="brand-logo" src="/logo-gpt-topbar.png" width="72" height="72" alt="" aria-hidden="true" />
+            <div className="brand-copy">
+              <CardTitle>{info?.noteName ?? 'Shared note'}</CardTitle>
+              <span className="topbar-context">Shared Markdown note</span>
+            </div>
           </div>
 
           <div className="topbar-controls">
+            <div className="public-presence-row" aria-label="Collaboration status">
+              <span className={`status-pill ${connectionTone(connectionState, currentStatus)} public-connection-pill`}>
+                <Radio />
+                {connectionLabel(connectionState, currentStatus)}
+              </span>
+              <span className="presence-summary">
+                <UsersRound />
+                {participantNames.length > 1 ? `${participantNames.length} collaborators` : 'Just you'}
+              </span>
+            </div>
             <Button
               variant="icon"
               className="name-chip settings-button"
               aria-label="Open settings"
+              title={displayName ? `Editing as ${displayName}` : 'Join this session'}
               onClick={() => setSettingsOpen(true)}
             >
+              <UserRound />
+              <span>{displayName || 'Join session'}</span>
               <Settings2 />
             </Button>
           </div>
@@ -496,10 +536,12 @@ export function PublicApp() {
         <section className="workspace-panel public-editor-panel panel">
           <div className="workspace-panel-header">
             <CardTitle>Editor</CardTitle>
+            <span className="editor-session-label">{shareStatusLabel(currentStatus)}</span>
           </div>
 
           {currentStatus === 'conflict' ? (
             <div className="public-conflict-banner" role="alert">
+              <AlertTriangle />
               This note changed on the NAS while it was being edited. Editing is paused until the owner chooses which version to keep.
             </div>
           ) : null}
@@ -514,7 +556,20 @@ export function PublicApp() {
             resolveImageUrl={resolvePublicImageUrl}
           />
 
-          {!displayName ? <div className="editor-empty-hint muted">Open settings to add your name and join the live session.</div> : null}
+          {!displayName ? (
+            <div className="editor-join-hint" role="status">
+              <span className="editor-join-icon" aria-hidden="true">
+                <UserRound />
+              </span>
+              <div>
+                <strong>Join the live session</strong>
+                <span>Choose a display name so collaborators know who is editing.</span>
+              </div>
+              <Button variant="secondary" onClick={() => setSettingsOpen(true)}>
+                Add your name
+              </Button>
+            </div>
+          ) : null}
         </section>
       </main>
     </div>
