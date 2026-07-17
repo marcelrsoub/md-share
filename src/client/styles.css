@@ -110,8 +110,6 @@ svg {
 
 .eyebrow {
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
   font-size: 0.66rem;
   font-weight: 600;
   margin-bottom: 0.4rem;
@@ -804,8 +802,6 @@ svg {
   display: block;
   color: var(--muted);
   font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
   margin-bottom: 6px;
 }
 

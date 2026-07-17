@@ -4,12 +4,15 @@ import {
   Copy,
   Download,
   ChevronRight,
+  Clock3,
   FileText,
   Folder,
+  FolderOpen,
+  Link2,
   RotateCcw,
   Search,
   Settings2,
-  Share2,
+  ShieldCheck,
 } from 'lucide-react';
 import type { AdminConfig, NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
 import { Badge } from '../components/ui/badge.js';
@@ -25,6 +28,7 @@ import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatBytes, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
+import { APP_VERSION, GITHUB_REPO_URL } from '../shared/app-meta.js';
 
 interface CreateShareResponse extends ShareSummary {}
 
@@ -44,6 +48,31 @@ export const EXPIRY_PRESETS = [
   { label: '7 days', value: '10080' },
 ] as const;
 
+export function formatShareExpiry(expiresAt: number | null, now = Date.now()): string {
+  if (expiresAt == null) {
+    return 'Never expires';
+  }
+
+  const remainingMinutes = Math.ceil((expiresAt - now) / 60_000);
+  if (remainingMinutes <= 0) {
+    return 'Expired';
+  }
+
+  if (remainingMinutes < 60) {
+    return `Expires in ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}`;
+  }
+
+  const remainingHours = Math.floor(remainingMinutes / 60);
+  const minutes = remainingMinutes % 60;
+  if (remainingHours < 24) {
+    return `Expires in ${remainingHours}h${minutes > 0 ? ` ${minutes}m` : ''}`;
+  }
+
+  const days = Math.floor(remainingHours / 24);
+  const hours = remainingHours % 24;
+  return `Expires in ${days}d${hours > 0 ? ` ${hours}h` : ''}`;
+}
+
 export function parseExpirySelection(selection: string): number | null {
   const trimmed = selection.trim();
   if (!trimmed) {
@@ -56,6 +85,11 @@ export function parseExpirySelection(selection: string): number | null {
 
 function getExpirySelectionLabel(selection: string): string {
   return EXPIRY_PRESETS.find((preset) => preset.value === selection)?.label ?? 'Never';
+}
+
+export function getNoteDirectory(relativePath: string): string {
+  const separator = relativePath.lastIndexOf('/');
+  return separator > 0 ? relativePath.slice(0, separator) : 'Root';
 }
 
 interface FolderNode {
@@ -176,13 +210,13 @@ function TreeNodeView({
           onClick={() => onToggleFolder(node.path)}
           aria-expanded={isExpanded}
           title={node.path}
-          style={{ paddingLeft: `${0.56 + depth * 0.72}rem` }}
+          style={{ paddingLeft: `${0.42 + depth * 0.48}rem` }}
         >
           <span className="nav-toggle">
             <ChevronRight />
           </span>
           <span className="nav-icon">
-            <Folder />
+            {isExpanded ? <FolderOpen /> : <Folder />}
           </span>
           <span className="nav-folder-name">{node.name}</span>
         </button>
@@ -214,11 +248,11 @@ function TreeNodeView({
       className={`nav-row nav-note${isSelected ? ' is-selected' : ''}`}
       onClick={() => onSelect(node.note.id)}
       title={node.note.relativePath}
-      style={{ paddingLeft: `${0.56 + depth * 0.72}rem` }}
+      style={{ paddingLeft: `${0.42 + depth * 0.48}rem` }}
     >
       <span className="nav-toggle nav-toggle-spacer" aria-hidden="true" />
-      <span className="nav-icon">
-        <FileText />
+          <span className="nav-icon">
+            <FileText />
       </span>
       <span className="nav-note-label">{node.note.name}</span>
     </button>
@@ -243,8 +277,10 @@ export function AdminApp() {
   const [shareBaseUrlDraft, setShareBaseUrlDraft] = useState('');
   const [conflictShare, setConflictShare] = useState<ShareSummary | null>(null);
   const [resolvingConflict, setResolvingConflict] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
+  const selectedNoteDirectory = selectedNote ? getNoteDirectory(selectedNote.relativePath) : null;
   const tree = useMemo(() => buildNoteTree(notes), [notes]);
   const selectedShares = shares.filter((share) => share.noteId === selectedNoteId);
   const selectedExpiryLabel = useMemo(() => getExpirySelectionLabel(expiresSelection), [expiresSelection]);
@@ -305,6 +341,11 @@ export function AdminApp() {
     void loadNotes();
     void loadShares();
     void loadConfig();
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -530,11 +571,19 @@ export function AdminApp() {
 
       <Card className="admin-topbar">
         <CardContent className="panel-tight topbar-block">
-          <div className="topbar-copy">
-            <CardTitle>MD Share - Admin View</CardTitle>
+          <div className="brand-lockup">
+            <img className="brand-logo" src="/logo-gpt-topbar.png" width="72" height="72" alt="" aria-hidden="true" />
+            <div className="brand-copy">
+              <CardTitle>MD Share</CardTitle>
+              <span className="topbar-context">Admin</span>
+            </div>
           </div>
 
           <div className="topbar-controls">
+            <span className="workspace-status">
+              <ShieldCheck />
+              Admin only
+            </span>
             <Button variant="icon" onClick={openSettings} aria-label="Open settings" disabled={loadingConfig || !adminConfig}>
               <Settings2 />
             </Button>
@@ -568,6 +617,13 @@ export function AdminApp() {
                 Default: <span className="mono">{adminConfig?.defaultShareBaseUrl ?? 'Loading...'}</span>
               </span>
             </label>
+
+            <div className="settings-dialog-meta">
+              <span className="settings-dialog-version">Version {APP_VERSION}</span>
+              <a className="settings-dialog-github" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
+                See MD Share on GitHub
+              </a>
+            </div>
           </DialogBody>
 
           <Separator />
@@ -615,6 +671,7 @@ export function AdminApp() {
               <CardTitle>Files</CardTitle>
               <span className="muted">{loadingNotes ? 'Refreshing...' : `${notes.length} results`}</span>
             </div>
+            <p className="panel-helper">Choose a note to preview it and create a share link.</p>
             <div className="navigator-controls">
               <label className="command-search" htmlFor="search-notes">
                 <span className="command-icon">
@@ -651,7 +708,10 @@ export function AdminApp() {
                 ))}
               </div>
             ) : (
-              <div className="empty-state muted">No Markdown files found.</div>
+              <div className="empty-state muted">
+                <span className="empty-state-title">No Markdown files found</span>
+                <span className="empty-state-copy">Mount a notes folder containing .md files to start sharing.</span>
+              </div>
             )}
           </div>
         </Card>
@@ -660,13 +720,22 @@ export function AdminApp() {
           <Card className="admin-workbench panel-tight">
             <div className="workbench-toolbar">
               <div className="command-selection workbench-selection">
-                <CardTitle>{selectedNote?.name ?? 'Choose a note'}</CardTitle>
-                <CardDescription className="mono">{selectedNote?.relativePath ?? 'No file selected'}</CardDescription>
+                <CardTitle className="workbench-selection-path mono">
+                  {selectedNote ? (
+                    <>
+                      {selectedNoteDirectory !== 'Root' ? <span>{selectedNoteDirectory}/</span> : null}
+                      <strong>{selectedNote.name}</strong>
+                    </>
+                  ) : (
+                    'Choose a note'
+                  )}
+                </CardTitle>
               </div>
 
               <div className="workbench-actions">
                 <DropdownMenu>
                   <DropdownMenuTrigger className="button-ghost expires-trigger" aria-label="Select share expiry">
+                    <Clock3 />
                     <span className="expires-trigger-label">Expires</span>
                     <span className="expires-trigger-value">{selectedExpiryLabel}</span>
                   </DropdownMenuTrigger>
@@ -684,12 +753,8 @@ export function AdminApp() {
                 </DropdownMenu>
 
                 <Button onClick={() => void createShare()} disabled={!selectedNote}>
-                  <Share2 />
+                  <Link2 />
                   <span>Create share</span>
-                </Button>
-                <Button variant="ghost" onClick={() => void refreshAll()}>
-                  <RotateCcw />
-                  <span>Refresh</span>
                 </Button>
               </div>
             </div>
@@ -699,7 +764,10 @@ export function AdminApp() {
             <div className="workbench-grid">
               <section className="workbench-section preview-panel">
                 <CardHeader className="preview-head workbench-section-head">
-                  <CardTitle>Preview</CardTitle>
+                  <div>
+                    <CardTitle>Preview</CardTitle>
+                    <CardDescription>Read-only view of the selected Markdown file.</CardDescription>
+                  </div>
                   {selectedPreview ? (
                     <div className="preview-meta muted">
                       <span>{formatTimestamp(selectedPreview.modifiedAt)}</span>
@@ -728,7 +796,10 @@ export function AdminApp() {
 
               <section className="workbench-section shares-panel">
                 <CardHeader className="preview-head workbench-section-head">
-                  <CardTitle>{selectedNote ? `Shared Links (${selectedShares.length})` : `Shared Links (${shares.length})`}</CardTitle>
+                  <div>
+                    <CardTitle>{selectedNote ? `Share links (${selectedShares.length})` : `Share links (${shares.length})`}</CardTitle>
+                    <CardDescription>Links stay private until you copy one.</CardDescription>
+                  </div>
                 </CardHeader>
 
                 <div className="share-list-compact">
@@ -744,17 +815,21 @@ export function AdminApp() {
                             {shareStatusLabel(share.status)}
                           </Badge>
                         </div>
-                        <div className="muted mono share-row-token">{shortToken(share.token)}</div>
+                        <div className="share-row-meta">
+                          <span className="muted mono share-row-token">{shortToken(share.token)}</span>
+                          <span className="share-row-expiry">{formatShareExpiry(share.expiresAt, now)}</span>
+                        </div>
                         {share.status === 'conflict' ? <div className="share-row-conflict-copy">The source file changed. Choose a version to continue.</div> : null}
                       </div>
 
                       <div className="share-row-actions">
-                        <Button variant="icon" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link" disabled={share.status === 'revoked'}>
+                        <Button variant="icon" title="Copy share link" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link" disabled={share.status === 'revoked'}>
                           <Copy />
                         </Button>
                         <Button
                           variant={share.status === 'conflict' ? 'secondary' : 'icon'}
                           onClick={() => (share.status === 'conflict' ? setConflictShare(share) : void exportShare(share.token))}
+                          title={share.status === 'conflict' ? 'Resolve file conflict' : 'Export note'}
                           aria-label={share.status === 'conflict' ? 'Resolve file conflict' : 'Export note'}
                           disabled={share.status === 'revoked'}
                         >
@@ -764,6 +839,7 @@ export function AdminApp() {
                           variant="icon"
                           className="danger-button"
                           onClick={() => void revokeShare(share.token)}
+                          title="Revoke share"
                           aria-label="Revoke share"
                           disabled={share.status === 'revoked'}
                         >
@@ -774,7 +850,12 @@ export function AdminApp() {
                   ))}
 
                   {(selectedNote ? selectedShares : shares).length === 0 ? (
-                    <div className="empty-state muted">{selectedNote ? 'No shares for this note yet.' : 'No shares yet.'}</div>
+                    <div className="empty-state muted">
+                      <span className="empty-state-title">{selectedNote ? 'No share links yet' : 'No share links yet'}</span>
+                      <span className="empty-state-copy">
+                        {selectedNote ? 'Choose an expiry, then create a link for this note.' : 'Select a note to create your first private link.'}
+                      </span>
+                    </div>
                   ) : null}
                 </div>
               </section>

@@ -1,16 +1,22 @@
-# 📄 MD Share
+# <img src="public/logo-gpt-topbar.png" alt="" width="40" height="40" /> MD Share
 
-Collaborate on your Markdown notes in real time from an Obsidian vault, a local folder, or a remote share link.
+## Collaborate in real time on your Obsidian notes
 
-## Features
+Turn a Markdown note into a focused, shareable workspace. MD Share lets you open one note in the browser, invite collaborators, and edit together live—while your vault stays self-hosted and under your control.
 
-- 🔗 Share a single Markdown note with a tokenized public link
-- ✍️ Edit live in the browser with collaborative cursors and participant names
-- 👀 Preview rendered Markdown beside the editor
-- 🖼️ Proxy local images safely from the mounted notes folder
-- 🗂️ Manage notes, shares, and exports from a separate admin UI
-- 🔒 Keep the admin surface private while exposing only the public editor
-- 🐳 Run everything locally with Docker Compose
+## Share the note, not your whole vault
+
+MD Share is built for the moment when a note needs input from someone else. Choose a note, create a private link, and bring collaborators into the browser without exposing your entire Obsidian vault.
+
+### What you get
+
+- 🔗 Create a private, tokenized link for one Markdown note
+- ✍️ Collaborate live in the browser with participant names and cursors
+- 👀 Keep the rendered Markdown preview close to the editor
+- 🖼️ Display local note images without exposing raw filesystem paths
+- 🗂️ Manage notes, links, and exports from a focused admin workspace
+- 🔒 Keep your vault and admin surface private
+- 🐳 Run the whole experience locally with Docker Compose
 
 ## Local URLs
 
@@ -27,7 +33,7 @@ The public view shows live collaboration with multiple cursors and a rendered pr
 
 ![Public collaborative editor with three collaborators and visible cursors](docs/readme/public-collaboration.png)
 
-## Quick Start
+## Get started in minutes
 
 Use the installer script for the fastest setup:
 
