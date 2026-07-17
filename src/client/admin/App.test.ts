@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildNoteTree, formatShareExpiry, getFolderAncestors, getNoteDirectory, parseExpirySelection } from './App.js';
+import { buildNoteTree, formatShareExpiry, getFolderAncestors, getNoteDirectory, isNewerVersion, parseExpirySelection } from './App.js';
 import type { NoteSummary } from '../../shared/types.js';
 
 function makeNote(overrides: Partial<NoteSummary>): NoteSummary {
@@ -47,6 +47,19 @@ describe('formatShareExpiry', () => {
 
   it('marks elapsed shares as expired', () => {
     expect(formatShareExpiry(now - 1, now)).toBe('Expired');
+  });
+});
+
+describe('isNewerVersion', () => {
+  it('supports release tags and compares numeric versions', () => {
+    expect(isNewerVersion('0.0.2', 'v0.0.4')).toBe(true);
+    expect(isNewerVersion('0.0.4', '0.0.4')).toBe(false);
+    expect(isNewerVersion('0.0.4', '0.0.3')).toBe(false);
+  });
+
+  it('ignores malformed versions', () => {
+    expect(isNewerVersion('local', 'v0.0.4')).toBe(false);
+    expect(isNewerVersion('0.0.2', 'latest')).toBe(false);
   });
 });
 
