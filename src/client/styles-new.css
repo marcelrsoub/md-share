@@ -1881,6 +1881,19 @@ img {
   font-size: var(--ui-label);
 }
 
+.settings-dialog-version-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-dialog-update-badge {
+  min-height: 28px;
+  padding: 0.35rem 0.55rem;
+  font-size: var(--ui-label);
+}
+
 .settings-dialog-github {
   display: inline-flex;
   align-items: center;

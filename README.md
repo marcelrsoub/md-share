@@ -2,7 +2,7 @@
 
 ## Collaborate in real time on your Obsidian notes
 
-Turn a Markdown note into a focused, shareable workspace. MD Share lets you open one note in the browser, invite collaborators, and edit together live—while your vault stays self-hosted and under your control.
+Turn a Markdown note into a focused, shareable workspace. MD Share lets you open one note in the browser, invite collaborators, and edit together live, while your vault stays self-hosted and under your control.
 
 ## Share the note, not your whole vault
 

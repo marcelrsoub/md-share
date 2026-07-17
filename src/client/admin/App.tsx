@@ -28,9 +28,18 @@ import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatBytes, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
-import { APP_VERSION, GITHUB_REPO_URL } from '../shared/app-meta.js';
+import { APP_VERSION, GITHUB_LATEST_RELEASE_URL, GITHUB_REPO_URL, GITHUB_UPDATE_GUIDE_URL } from '../shared/app-meta.js';
 
 interface CreateShareResponse extends ShareSummary {}
+
+interface LatestReleaseResponse {
+  tag_name?: unknown;
+}
+
+interface AvailableUpdate {
+  version: string;
+  guideUrl: string;
+}
 
 function buildAdminAssetUrl(noteId: string, sourcePath: string): string {
   const url = new URL(`/api/admin/notes/${encodeURIComponent(noteId)}/assets`, window.location.origin);
@@ -71,6 +80,35 @@ export function formatShareExpiry(expiresAt: number | null, now = Date.now()): s
   const days = Math.floor(remainingHours / 24);
   const hours = remainingHours % 24;
   return `Expires in ${days}d${hours > 0 ? ` ${hours}h` : ''}`;
+}
+
+export function isNewerVersion(currentVersion: string, latestVersion: string): boolean {
+  const parseVersion = (value: string): number[] | null => {
+    const normalized = value.trim().replace(/^v/i, '').split('-')[0];
+    const parts = normalized.split('.');
+    if (parts.length < 2 || parts.some((part) => !/^\d+$/.test(part))) {
+      return null;
+    }
+
+    return parts.map(Number);
+  };
+
+  const current = parseVersion(currentVersion);
+  const latest = parseVersion(latestVersion);
+  if (!current || !latest) {
+    return false;
+  }
+
+  const length = Math.max(current.length, latest.length);
+  for (let index = 0; index < length; index += 1) {
+    const currentPart = current[index] ?? 0;
+    const latestPart = latest[index] ?? 0;
+    if (latestPart !== currentPart) {
+      return latestPart > currentPart;
+    }
+  }
+
+  return false;
 }
 
 export function parseExpirySelection(selection: string): number | null {
@@ -278,6 +316,8 @@ export function AdminApp() {
   const [conflictShare, setConflictShare] = useState<ShareSummary | null>(null);
   const [resolvingConflict, setResolvingConflict] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
+  const [updateCheckComplete, setUpdateCheckComplete] = useState(false);
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
   const selectedNoteDirectory = selectedNote ? getNoteDirectory(selectedNote.relativePath) : null;
@@ -347,6 +387,37 @@ export function AdminApp() {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!settingsOpen || updateCheckComplete) {
+      return;
+    }
+
+    let cancelled = false;
+    fetchJson<LatestReleaseResponse>(GITHUB_LATEST_RELEASE_URL)
+      .then((release) => {
+        if (cancelled || typeof release.tag_name !== 'string' || !isNewerVersion(APP_VERSION, release.tag_name)) {
+          return;
+        }
+
+        setAvailableUpdate({
+          version: release.tag_name.replace(/^v/i, ''),
+          guideUrl: GITHUB_UPDATE_GUIDE_URL,
+        });
+      })
+      .catch(() => {
+        // Update checks are best-effort and should not interrupt the admin workflow.
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setUpdateCheckComplete(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsOpen, updateCheckComplete]);
 
   useEffect(() => {
     setDocumentMetadata({
@@ -619,9 +690,16 @@ export function AdminApp() {
             </label>
 
             <div className="settings-dialog-meta">
-              <span className="settings-dialog-version">Version {APP_VERSION}</span>
-              <a className="settings-dialog-github" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
-                See MD Share on GitHub
+              <div className="settings-dialog-version-group">
+                <span className="settings-dialog-version">Version {APP_VERSION}</span>
+                {availableUpdate ? (
+                  <Badge variant="outline" className="settings-dialog-update-badge">
+                    Update available
+                  </Badge>
+                ) : null}
+              </div>
+              <a className="settings-dialog-github" href={availableUpdate?.guideUrl ?? GITHUB_REPO_URL} target="_blank" rel="noreferrer">
+                {availableUpdate ? `Update to ${availableUpdate.version}` : 'See MD Share on GitHub'}
               </a>
             </div>
           </DialogBody>
