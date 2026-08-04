@@ -7,6 +7,11 @@ const rootDir = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
+  // Keep the app and the shared Kanban package on the same React dispatcher,
+  // including when the package is linked from a sibling checkout locally.
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   build: {
     outDir: 'dist/client',
     emptyOutDir: true,
