@@ -13,6 +13,8 @@ import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, shareStatusLabel, statusTone } from '../shared/api.js';
 import { GITHUB_REPO_URL } from '../shared/app-meta.js';
 import { MarkdownEditor } from '../components/markdown-editor.js';
+import { KanbanWorkspace } from './kanban-workspace.js';
+import { useKanbanDocument } from './use-kanban-document.js';
 
 const STORAGE_KEY = 'md-share.display-name';
 const CLIENT_ID_KEY = 'md-share.presence-id';
@@ -122,6 +124,8 @@ export function PublicApp() {
   const awarenessRef = useState(() => new Awareness(docRef))[0];
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const clientId = useState(() => getPresenceId())[0];
+  const kanbanDocument = useKanbanDocument(docRef);
+  const [workspaceMode, setWorkspaceMode] = useState<'board' | 'source'>('board');
   const presenceTheme = useMemo(() => getPresenceTheme(clientId), [clientId]);
   const resolvePublicImageUrl = useMemo(() => {
     if (!token) {
@@ -415,6 +419,8 @@ export function PublicApp() {
   }
 
   const editable = isEditableShareStatus(currentStatus) && Boolean(displayName);
+  const isKanbanNote = kanbanDocument.board !== null;
+  const showKanbanBoard = isKanbanNote && workspaceMode === 'board';
   if (loading) {
     return (
       <div className="app-shell">
@@ -535,8 +541,30 @@ export function PublicApp() {
       <main className="public-workspace">
         <section className="workspace-panel public-editor-panel panel">
           <div className="workspace-panel-header">
-            <CardTitle>Editor</CardTitle>
-            <span className="editor-session-label">{shareStatusLabel(currentStatus)}</span>
+            <CardTitle>{showKanbanBoard ? 'Board' : 'Editor'}</CardTitle>
+            <div className="public-editor-header-controls">
+              {isKanbanNote ? (
+                <div className="public-editor-mode-toggle" role="group" aria-label="Kanban workspace mode">
+                  <Button
+                    variant="ghost"
+                    className={workspaceMode === 'board' ? 'is-active' : ''}
+                    aria-pressed={workspaceMode === 'board'}
+                    onClick={() => setWorkspaceMode('board')}
+                  >
+                    Board
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className={workspaceMode === 'source' ? 'is-active' : ''}
+                    aria-pressed={workspaceMode === 'source'}
+                    onClick={() => setWorkspaceMode('source')}
+                  >
+                    Source
+                  </Button>
+                </div>
+              ) : null}
+              <span className="editor-session-label">{shareStatusLabel(currentStatus)}</span>
+            </div>
           </div>
 
           {currentStatus === 'conflict' ? (
@@ -546,15 +574,25 @@ export function PublicApp() {
             </div>
           ) : null}
 
-          <MarkdownEditor
-            content=""
-            doc={docRef}
-            awareness={awarenessRef}
-            editable={editable}
-            className={`editor-host-public${editable ? '' : ' is-readonly'}`}
-            disabledOverlayLabel="This share is not editable right now."
-            resolveImageUrl={resolvePublicImageUrl}
-          />
+          {showKanbanBoard && kanbanDocument.board ? (
+            <KanbanWorkspace
+              board={kanbanDocument.board}
+              doc={docRef}
+              editable={editable}
+              title={info?.noteName ?? 'Shared note'}
+              resolveImageUrl={resolvePublicImageUrl}
+            />
+          ) : (
+            <MarkdownEditor
+              content=""
+              doc={docRef}
+              awareness={awarenessRef}
+              editable={editable}
+              className={`editor-host-public${editable ? '' : ' is-readonly'}`}
+              disabledOverlayLabel="This share is not editable right now."
+              resolveImageUrl={resolvePublicImageUrl}
+            />
+          )}
 
           {!displayName ? (
             <div className="editor-join-hint" role="status">

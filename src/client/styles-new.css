@@ -2257,6 +2257,73 @@ img {
   padding: 2px 2px 12px;
 }
 
+.public-editor-header-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.public-editor-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--control-bg);
+}
+
+.public-editor-mode-toggle .button-ghost {
+  min-height: 28px;
+  padding: 0.25rem 0.58rem;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--ui-label);
+}
+
+.public-editor-mode-toggle .button-ghost.is-active {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.public-kanban-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 4px);
+}
+
+.public-kanban-host .react-kanban-view {
+  --rk-bg: var(--editor-bg);
+  --rk-panel: var(--surface-soft);
+  --rk-panel-strong: var(--surface);
+  --rk-border: var(--border);
+  --rk-text: var(--text);
+  --rk-muted: var(--muted);
+  --rk-accent: var(--accent-strong);
+  --rk-hover: var(--control-hover);
+  --rk-danger: var(--danger);
+  --rk-scrim: var(--scrim);
+  --rk-on-accent: #ffffff;
+}
+
+.public-kanban-card-preview {
+  gap: 0.55rem;
+  color: var(--content);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.public-kanban-card-preview > :first-child {
+  margin-top: 0;
+}
+
+.public-kanban-card-preview > :last-child {
+  margin-bottom: 0;
+}
+
 .public-editor-panel .workspace-panel-header .ui-card-title {
   margin-top: 5px;
   font-size: 1.12rem;

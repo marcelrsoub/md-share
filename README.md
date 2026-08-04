@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/marcelrsoub/md-share/main/install.s
 The installer asks for your notes folder path, writes a local env file, and starts Docker Compose.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marcelrsoub/md-share/v0.0.2/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/marcelrsoub/md-share/v0.1.0/install.sh | bash
 ```
 
 To work from a local clone instead, review the files first:
@@ -54,6 +54,10 @@ git clone https://github.com/marcelrsoub/md-share.git
 cd md-share
 bash install.sh
 ```
+
+### React Kanban dependency
+
+Kanban shares consume the generated `obsidian-react-kanban` library from the pinned `0.2.0` release archive over HTTPS. For local library development, temporarily replace that dependency with a `file:` reference to a sibling checkout and regenerate `package-lock.json` before switching back to the pinned archive for deployment.
 
 ## Notes Folder
 
