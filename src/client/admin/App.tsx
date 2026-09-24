@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowUpCircle,
   Ban,
   Copy,
   Download,
@@ -405,35 +406,38 @@ export function AdminApp() {
   }, []);
 
   useEffect(() => {
-    if (!settingsOpen || updateCheckComplete) {
+    if (updateCheckComplete) {
       return;
     }
 
     let cancelled = false;
-    fetchJson<LatestReleaseResponse>(GITHUB_LATEST_RELEASE_URL)
-      .then((release) => {
-        if (cancelled || typeof release.tag_name !== 'string' || !isNewerVersion(APP_VERSION, release.tag_name)) {
-          return;
-        }
+    const timer = window.setTimeout(() => {
+      fetchJson<LatestReleaseResponse>(GITHUB_LATEST_RELEASE_URL)
+        .then((release) => {
+          if (cancelled || typeof release.tag_name !== 'string' || !isNewerVersion(APP_VERSION, release.tag_name)) {
+            return;
+          }
 
-        setAvailableUpdate({
-          version: release.tag_name.replace(/^v/i, ''),
-          guideUrl: GITHUB_UPDATE_GUIDE_URL,
+          setAvailableUpdate({
+            version: release.tag_name.replace(/^v/i, ''),
+            guideUrl: GITHUB_UPDATE_GUIDE_URL,
+          });
+        })
+        .catch(() => {
+          // Update checks are best-effort and should not interrupt the admin workflow.
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setUpdateCheckComplete(true);
+          }
         });
-      })
-      .catch(() => {
-        // Update checks are best-effort and should not interrupt the admin workflow.
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setUpdateCheckComplete(true);
-        }
-      });
+    }, 1500);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [settingsOpen, updateCheckComplete]);
+  }, [updateCheckComplete]);
 
   useEffect(() => {
     setDocumentMetadata({
@@ -672,6 +676,18 @@ export function AdminApp() {
               <ShieldCheck />
               Admin only
             </span>
+            {availableUpdate ? (
+              <a
+                className="update-pill"
+                href={availableUpdate.guideUrl}
+                target="_blank"
+                rel="noreferrer"
+                title={`Version ${availableUpdate.version} is available. Open the update guide.`}
+              >
+                <ArrowUpCircle />
+                <span>Update {availableUpdate.version}</span>
+              </a>
+            ) : null}
             <Button variant="icon" onClick={openSettings} aria-label="Open settings" disabled={loadingConfig || !adminConfig}>
               <Settings2 />
             </Button>

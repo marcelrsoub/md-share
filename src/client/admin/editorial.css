@@ -7,6 +7,37 @@
   color: var(--text);
 }
 
+.app-shell-admin .update-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0.4rem 0.72rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--ui-label);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.app-shell-admin .update-pill:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.app-shell-admin .update-pill svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 880px) {
+  .app-shell-admin .update-pill span {
+    display: none;
+  }
+}
+
 html:has(.app-shell-admin) {
   height: 100%;
   overflow: hidden;
