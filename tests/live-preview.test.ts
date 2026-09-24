@@ -89,21 +89,40 @@ describe('collectLivePreviewDecorations', () => {
     ).toHaveLength(0);
   });
 
-  it('reveals only the selected line while keeping other lines rendered', () => {
+  it('keeps structure classes on the active line so line heights stay stable', () => {
     const content = ['# Heading', '**emphasis**', '- item'].join('\n');
     const state = EditorState.create({ doc: content });
-    const decorations = collectLivePreviewDecorations(state.doc, { activeLineNumber: 2 });
-    const activeLine = state.doc.line(2);
+    const decorations = collectLivePreviewDecorations(state.doc, { activeLineNumber: 1 });
+    const activeHeading = state.doc.line(1);
+
+    expect(decorations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'heading', from: activeHeading.from, to: activeHeading.from }),
+        expect.objectContaining({ kind: 'list', from: state.doc.line(3).from, to: state.doc.line(3).from }),
+      ]),
+    );
 
     expect(
       decorations.some(
-        (decoration) => decoration.from >= activeLine.from && decoration.to <= activeLine.to,
+        (decoration) => decoration.kind === 'syntax' && decoration.from >= activeHeading.from && decoration.to <= activeHeading.to,
       ),
     ).toBe(false);
+  });
+
+  it('renders read-only previews fully without revealing active-line sources', () => {
+    const content = ['# Heading', '**emphasis**', '- item'].join('\n');
+    const state = EditorState.create({ doc: content });
+    const decorations = collectLivePreviewDecorations(state.doc, { activeLineNumber: 1, revealActiveSource: false });
+    const headingLine = state.doc.line(1);
+
     expect(decorations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: 'heading', from: state.doc.line(1).from, to: state.doc.line(1).from }),
-        expect.objectContaining({ kind: 'list', from: state.doc.line(3).from, to: state.doc.line(3).from }),
+        expect.objectContaining({
+          kind: 'syntax',
+          from: headingLine.from,
+          to: headingLine.from + 2,
+          className: 'cm-live-syntax',
+        }),
       ]),
     );
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NoteSummary } from '../src/shared/types.js';
-import { buildNoteTree } from '../src/client/admin/App.js';
+import { buildNoteTree, getNoteListEmptyState } from '../src/client/admin/App.js';
 
 describe('admin note tree', () => {
   it('groups notes by folder and keeps folders before notes at each level', () => {
@@ -35,6 +35,22 @@ describe('admin note tree', () => {
         ]);
       }
     }
+  });
+});
+
+describe('admin file navigator empty states', () => {
+  it('explains that the note library is empty when there is no search', () => {
+    expect(getNoteListEmptyState('')).toEqual({
+      title: 'No Markdown files found',
+      description: 'Mount a notes folder containing .md files to start sharing.',
+    });
+  });
+
+  it('distinguishes an empty search result and includes the trimmed query', () => {
+    expect(getNoteListEmptyState('  roadmap  ')).toEqual({
+      title: 'No matching Markdown files',
+      description: 'No Markdown files match “roadmap”. Try another search.',
+    });
   });
 });
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Ban,
   Copy,
   Download,
@@ -128,6 +129,21 @@ function getExpirySelectionLabel(selection: string): string {
 export function getNoteDirectory(relativePath: string): string {
   const separator = relativePath.lastIndexOf('/');
   return separator > 0 ? relativePath.slice(0, separator) : 'Root';
+}
+
+export function getNoteListEmptyState(query: string): { title: string; description: string } {
+  const trimmedQuery = query.trim();
+  if (trimmedQuery) {
+    return {
+      title: 'No matching Markdown files',
+      description: `No Markdown files match “${trimmedQuery}”. Try another search.`,
+    };
+  }
+
+  return {
+    title: 'No Markdown files found',
+    description: 'Mount a notes folder containing .md files to start sharing.',
+  };
 }
 
 interface FolderNode {
@@ -430,6 +446,7 @@ export function AdminApp() {
   useEffect(() => {
     if (!selectedNoteId) {
       setSelectedPreview(null);
+      setLoadingPreview(false);
       return;
     }
 
@@ -786,9 +803,9 @@ export function AdminApp() {
                 ))}
               </div>
             ) : (
-              <div className="empty-state muted">
-                <span className="empty-state-title">No Markdown files found</span>
-                <span className="empty-state-copy">Mount a notes folder containing .md files to start sharing.</span>
+              <div className={`empty-state muted admin-files-empty${search.trim() ? ' is-search-empty' : ' is-library-empty'}`} role="status">
+                <span className="empty-state-title">{getNoteListEmptyState(search).title}</span>
+                <span className="empty-state-copy">{getNoteListEmptyState(search).description}</span>
               </div>
             )}
           </div>
@@ -798,21 +815,20 @@ export function AdminApp() {
           <Card className="admin-workbench panel-tight">
             <div className="workbench-toolbar">
               <div className="command-selection workbench-selection">
-                <CardTitle className="workbench-selection-path mono">
-                  {selectedNote ? (
-                    <>
-                      {selectedNoteDirectory !== 'Root' ? <span>{selectedNoteDirectory}/</span> : null}
-                      <strong>{selectedNote.name}</strong>
-                    </>
-                  ) : (
-                    'Choose a note'
-                  )}
+                <span className="admin-selection-label">{selectedNote ? 'Selected Markdown file' : 'File preview'}</span>
+                <CardTitle className="workbench-selection-path mono admin-selected-file">
+                  {selectedNote?.name ?? 'No file selected'}
                 </CardTitle>
+                {selectedNote ? (
+                  <span className="admin-selected-location">
+                    {selectedNoteDirectory === 'Root' ? 'Root folder' : selectedNoteDirectory}
+                  </span>
+                ) : null}
               </div>
 
               <div className="workbench-actions">
                 <DropdownMenu>
-                  <DropdownMenuTrigger className="button-ghost expires-trigger" aria-label="Select share expiry">
+                  <DropdownMenuTrigger className="button-ghost expires-trigger admin-expiry-trigger" aria-label="Select share expiry">
                     <Clock3 />
                     <span className="expires-trigger-label">Expires</span>
                     <span className="expires-trigger-value">{selectedExpiryLabel}</span>
@@ -830,14 +846,12 @@ export function AdminApp() {
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Button onClick={() => void createShare()} disabled={!selectedNote}>
+                <Button className="admin-create-share" onClick={() => void createShare()} disabled={!selectedNote}>
                   <Link2 />
                   <span>Create share</span>
                 </Button>
               </div>
             </div>
-
-            <Separator />
 
             <div className="workbench-grid">
               <section className="workbench-section preview-panel">
@@ -857,7 +871,7 @@ export function AdminApp() {
 
                 <div className="preview-sheet preview-editor-sheet">
                   {loadingPreview ? <p className="muted">Loading preview...</p> : null}
-                  {!loadingPreview && selectedPreview ? (
+                  {!loadingPreview && selectedNote && selectedPreview ? (
                     <MarkdownEditor
                       content={selectedPreview.content || selectedPreview.excerpt || ''}
                       editable={false}
@@ -868,7 +882,16 @@ export function AdminApp() {
                       }
                     />
                   ) : null}
-                  {!loadingPreview && !selectedPreview ? <p className="muted">Select a note to preview its content.</p> : null}
+                  {!loadingPreview && !selectedPreview ? (
+                    <div className="empty-state muted admin-preview-empty" role="status">
+                      <span className="empty-state-title">{selectedNote ? 'Preview unavailable' : 'No file selected'}</span>
+                      <span className="empty-state-copy">
+                        {selectedNote
+                          ? 'The selected Markdown file could not be previewed.'
+                          : 'Choose a Markdown file from Files to preview its content.'}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </section>
 
@@ -876,7 +899,9 @@ export function AdminApp() {
                 <CardHeader className="preview-head workbench-section-head">
                   <div>
                     <CardTitle>{selectedNote ? `Share links (${selectedShares.length})` : `Share links (${shares.length})`}</CardTitle>
-                    <CardDescription>Links stay private until you copy one.</CardDescription>
+                    <CardDescription>
+                      {selectedNote ? 'Private links for this file.' : 'All private share links. Select a file to filter by note.'}
+                    </CardDescription>
                   </div>
                 </CardHeader>
 
@@ -885,6 +910,8 @@ export function AdminApp() {
                     <article
                       key={share.token}
                       className={`share-row-compact${share.status === 'revoked' ? ' is-revoked' : ''}${share.status === 'conflict' ? ' is-conflict' : ''}`}
+                      role="group"
+                      aria-label={`${share.noteName}, ${shareStatusLabel(share.status)}`}
                     >
                       <div className="share-row-copy">
                         <div className="share-row-title">
@@ -897,18 +924,23 @@ export function AdminApp() {
                           <span className="muted mono share-row-token">{shortToken(share.token)}</span>
                           <span className="share-row-expiry">{formatShareExpiry(share.expiresAt, now)}</span>
                         </div>
-                        {share.status === 'conflict' ? <div className="share-row-conflict-copy">The source file changed. Choose a version to continue.</div> : null}
+                        {share.status === 'conflict' ? (
+                          <div className="share-row-conflict-copy">
+                            <AlertTriangle aria-hidden="true" />
+                            <span><strong>File conflict.</strong> The source changed. Choose a version to continue.</span>
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="share-row-actions">
-                        <Button variant="icon" title="Copy share link" onClick={() => void copyLink(share.shareUrl)} aria-label="Copy share link" disabled={share.status === 'revoked'}>
+                        <Button variant="icon" title="Copy share link" onClick={() => void copyLink(share.shareUrl)} aria-label={`Copy share link for ${share.noteName}`} disabled={share.status === 'revoked'}>
                           <Copy />
                         </Button>
                         <Button
                           variant={share.status === 'conflict' ? 'secondary' : 'icon'}
                           onClick={() => (share.status === 'conflict' ? setConflictShare(share) : void exportShare(share.token))}
                           title={share.status === 'conflict' ? 'Resolve file conflict' : 'Export note'}
-                          aria-label={share.status === 'conflict' ? 'Resolve file conflict' : 'Export note'}
+                          aria-label={share.status === 'conflict' ? `Resolve file conflict for ${share.noteName}` : `Export ${share.noteName}`}
                           disabled={share.status === 'revoked'}
                         >
                           {share.status === 'conflict' ? 'Resolve' : <Download />}
@@ -918,7 +950,7 @@ export function AdminApp() {
                           className="danger-button"
                           onClick={() => void revokeShare(share.token)}
                           title="Revoke share"
-                          aria-label="Revoke share"
+                          aria-label={`Revoke share for ${share.noteName}`}
                           disabled={share.status === 'revoked'}
                         >
                           <Ban />
@@ -928,10 +960,10 @@ export function AdminApp() {
                   ))}
 
                   {(selectedNote ? selectedShares : shares).length === 0 ? (
-                    <div className="empty-state muted">
-                      <span className="empty-state-title">{selectedNote ? 'No share links yet' : 'No share links yet'}</span>
+                    <div className="empty-state muted admin-shares-empty" role="status">
+                      <span className="empty-state-title">{selectedNote ? 'No share links for this file' : 'No share links yet'}</span>
                       <span className="empty-state-copy">
-                        {selectedNote ? 'Choose an expiry, then create a link for this note.' : 'Select a note to create your first private link.'}
+                        {selectedNote ? 'Choose an expiry, then create a private link for this file.' : 'Select a file to create your first private link.'}
                       </span>
                     </div>
                   ) : null}

@@ -44,7 +44,7 @@ export function MarkdownEditor({
         extensions: [
           basicSetup,
           markdown({ codeLanguages: resolveMarkdownCodeLanguage }),
-          livePreview({ resolveImageUrl }),
+          livePreview({ resolveImageUrl, revealActiveSource: !staticPreview }),
           ...(yText && awareness ? [yCollab(yText, awareness)] : []),
           EditorState.readOnly.of(!editable),
           EditorView.editable.of(editable),

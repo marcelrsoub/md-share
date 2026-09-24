@@ -1,0 +1,512 @@
+/* Admin-only workspace layout. The shared stylesheet is intentionally kept separate. */
+.admin-layout .nav-folder.is-expanded .nav-toggle {
+  color: var(--accent);
+}
+
+.admin-layout .nav-note.is-selected {
+  color: var(--text);
+}
+
+html:has(.app-shell-admin) {
+  height: 100%;
+  overflow: hidden;
+}
+
+body:has(.app-shell-admin),
+body:has(.app-shell-admin) #root {
+  height: 100%;
+  min-height: 0;
+}
+
+.app-shell-admin {
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.app-shell-admin :focus-visible {
+  outline: 3px solid var(--accent-strong, var(--accent, #6d28d9));
+  outline-offset: 3px;
+}
+
+.app-shell-admin .admin-layout {
+  grid-template-columns: minmax(205px, 0.72fr) minmax(0, 2.38fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+.app-shell-admin .admin-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+  height: 100%;
+  min-height: 0;
+  border-color: var(--border, rgba(15, 23, 42, 0.12));
+  background: var(--surface-fill, var(--surface, #fff));
+}
+
+.app-shell-admin .admin-workbench,
+.app-shell-admin .workbench-grid {
+  display: contents;
+}
+
+.app-shell-admin .admin-main {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-columns: minmax(0, 1.48fr) minmax(275px, 0.9fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell-admin .workbench-toolbar,
+.app-shell-admin .preview-panel,
+.app-shell-admin .shares-panel {
+  min-width: 0;
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.12));
+  border-radius: var(--radius, 18px);
+  background: var(--surface-fill, var(--surface, #fff));
+  box-shadow: var(--shadow, none);
+}
+
+.app-shell-admin .workbench-toolbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 94px;
+  padding: 16px 18px;
+}
+
+.app-shell-admin .workbench-selection {
+  min-width: 0;
+  gap: 3px;
+  margin-right: auto;
+}
+
+.app-shell-admin .admin-selection-label {
+  color: var(--muted, #475569);
+  font-size: var(--ui-label, 0.75rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.app-shell-admin .workbench-selection .admin-selected-file {
+  overflow: visible;
+  color: var(--text, #0f172a);
+  font-size: clamp(1.12rem, 1.4vw, 1.55rem);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.app-shell-admin .admin-selected-location {
+  color: var(--muted, #475569);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--ui-label, 0.75rem);
+  overflow-wrap: anywhere;
+}
+
+.app-shell-admin .workbench-actions {
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.app-shell-admin .admin-expiry-trigger {
+  min-width: 190px;
+  max-width: 260px;
+}
+
+.app-shell-admin .admin-create-share {
+  min-width: 144px;
+}
+
+.app-shell-admin .preview-panel,
+.app-shell-admin .shares-panel {
+  grid-row: 2;
+  padding: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell-admin .preview-panel .preview-sheet,
+.app-shell-admin .shares-panel .share-list-compact {
+  min-height: 0;
+}
+
+.app-shell-admin .editor-host-admin-preview {
+  height: 100%;
+  min-height: 0;
+}
+
+.app-shell-admin .preview-panel {
+  grid-column: 1;
+}
+
+.app-shell-admin .shares-panel {
+  grid-column: 2;
+}
+
+.app-shell-admin .workbench-section-head {
+  align-items: center;
+  min-height: 42px;
+}
+
+.app-shell-admin .workbench-section-head .ui-card-title {
+  font-size: 1rem;
+}
+
+.app-shell-admin .admin-nav-scroll {
+  overscroll-behavior: contain;
+}
+
+.app-shell-admin .nav-tree,
+.app-shell-admin .nav-group {
+  gap: 3px;
+}
+
+.app-shell-admin .nav-children {
+  gap: 2px;
+}
+
+.app-shell-admin .nav-row {
+  min-height: 38px;
+  padding-block: 0.42rem;
+  border-radius: var(--radius-xs, 10px);
+  font-size: var(--ui-body, 0.875rem);
+}
+
+.app-shell-admin .nav-folder {
+  color: var(--muted, #475569);
+  background: transparent;
+  font-weight: 600;
+}
+
+.app-shell-admin .nav-folder:hover,
+.app-shell-admin .nav-note:hover {
+  background: var(--surface-soft, var(--control-hover, rgba(15, 23, 42, 0.05)));
+}
+
+.app-shell-admin .nav-icon {
+  opacity: 0.76;
+}
+
+.app-shell-admin .nav-note.is-selected {
+  color: var(--text, #0f172a);
+  background: var(--accent-soft, rgba(109, 40, 217, 0.1));
+  border-color: var(--accent-strong, var(--accent, #6d28d9));
+}
+
+.app-shell-admin .preview-sheet {
+  min-height: 0;
+  background: var(--editor-bg, var(--surface-soft, #f7f9fc));
+}
+
+.app-shell-admin .admin-preview-empty,
+.app-shell-admin .admin-files-empty,
+.app-shell-admin .admin-shares-empty {
+  background: var(--surface-soft, rgba(15, 23, 42, 0.035));
+}
+
+.app-shell-admin .admin-files-empty {
+  margin: 10px 0;
+}
+
+.app-shell-admin .admin-preview-empty {
+  margin: 16px;
+}
+
+.app-shell-admin .share-list-compact {
+  gap: 8px;
+}
+
+.app-shell-admin .share-row-compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  max-height: none;
+  overflow: visible;
+  padding: 10px;
+  background: var(--surface-soft, var(--control-bg, rgba(15, 23, 42, 0.035)));
+}
+
+.app-shell-admin .share-row-compact.is-revoked {
+  opacity: 0.7;
+}
+
+.app-shell-admin .share-row-compact.is-conflict {
+  align-items: center;
+  border-color: var(--warning, #a16207);
+  background: rgba(245, 158, 11, 0.09);
+  box-shadow: inset 3px 0 0 var(--warning, #a16207);
+}
+
+.app-shell-admin .share-row-copy {
+  gap: 4px;
+}
+
+.app-shell-admin .share-row-title {
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.app-shell-admin .share-row-title strong {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.app-shell-admin .share-row-meta {
+  gap: 5px 9px;
+  align-items: baseline;
+}
+
+.app-shell-admin .share-row-expiry {
+  white-space: normal;
+}
+
+.app-shell-admin .share-row-conflict-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--warning, #a16207);
+  font-size: var(--ui-label, 0.75rem);
+  line-height: 1.4;
+}
+
+.app-shell-admin .share-row-conflict-copy svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.app-shell-admin .share-row-conflict-copy strong {
+  color: var(--text, #0f172a);
+}
+
+.app-shell-admin .share-row-actions {
+  justify-content: flex-end;
+  align-self: center;
+  flex-wrap: nowrap;
+}
+
+.app-shell-admin .share-row-actions .icon-button {
+  width: 40px;
+  min-height: 40px;
+}
+
+@media (max-width: 1199px) {
+  html:has(.app-shell-admin) {
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  body:has(.app-shell-admin),
+  body:has(.app-shell-admin) #root {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .app-shell-admin {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .app-shell-admin .admin-layout {
+    grid-template-columns: minmax(190px, 0.64fr) minmax(0, 1.36fr);
+    grid-template-rows: auto;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    align-items: start;
+  }
+
+  .app-shell-admin .admin-sidebar {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+    max-height: calc(100dvh - 96px);
+  }
+
+  .app-shell-admin .admin-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .app-shell-admin .workbench-toolbar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .app-shell-admin .preview-panel {
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 440px;
+  }
+
+  .app-shell-admin .shares-panel {
+    grid-column: 1;
+    grid-row: 3;
+    min-height: 250px;
+  }
+
+  .app-shell-admin .share-list-compact {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 880px) {
+  html:has(.app-shell-admin) {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app-shell-admin {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .app-shell-admin .admin-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .app-shell-admin .admin-sidebar {
+    width: 100%;
+    max-height: min(42svh, 24rem);
+    min-height: 0;
+  }
+
+  .app-shell-admin .admin-nav-scroll {
+    max-height: none;
+    overflow: auto;
+    padding-right: 0;
+    overscroll-behavior: contain;
+  }
+
+  .app-shell-admin .admin-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    width: 100%;
+    height: auto;
+    gap: 10px;
+    overflow: visible;
+  }
+
+  .app-shell-admin .workbench-toolbar {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 15px;
+  }
+
+  .app-shell-admin .workbench-grid {
+    display: contents;
+  }
+
+  .app-shell-admin .preview-panel,
+  .app-shell-admin .shares-panel {
+    grid-column: 1;
+    min-height: 0;
+    padding: 14px;
+    overflow: visible;
+  }
+
+  .app-shell-admin .preview-panel {
+    grid-row: 2;
+  }
+
+  .app-shell-admin .shares-panel {
+    grid-row: 3;
+  }
+
+  .app-shell-admin .preview-sheet {
+    min-height: 260px;
+    flex: 0 0 auto;
+    overflow: auto;
+  }
+
+  .app-shell-admin .share-list-compact {
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .app-shell-admin .workbench-actions {
+    width: auto;
+    max-width: 100%;
+  }
+
+  .app-shell-admin .admin-expiry-trigger {
+    width: auto;
+    min-width: min(190px, 100%);
+  }
+}
+
+@media (max-width: 520px) {
+  .app-shell-admin {
+    padding: 8px;
+  }
+
+  .app-shell-admin .admin-topbar .panel-tight {
+    padding: 9px 11px;
+  }
+
+  .app-shell-admin .workbench-toolbar {
+    align-items: stretch;
+  }
+
+  .app-shell-admin .workbench-selection {
+    width: 100%;
+  }
+
+  .app-shell-admin .workbench-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .app-shell-admin .admin-expiry-trigger {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .app-shell-admin .admin-create-share {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .app-shell-admin .share-row-compact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .app-shell-admin .share-row-actions {
+    justify-self: end;
+  }
+}

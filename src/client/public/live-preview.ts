@@ -28,6 +28,7 @@ export interface LivePreviewDecorationRange {
 export interface LivePreviewOptions {
   resolveImageUrl?: (source: string) => string | null;
   activeLineNumber?: number;
+  revealActiveSource?: boolean;
 }
 
 class ImagePreviewWidget extends WidgetType {
@@ -238,6 +239,7 @@ export function collectLivePreviewDecorations(
 ): LivePreviewDecorationRange[] {
   const ranges: LivePreviewDecorationRange[] = [];
   let inCodeBlock = false;
+  const revealEnabled = options.revealActiveSource ?? true;
   const sourceLines = Array.from({ length: doc.lines }, (_, index) => doc.line(index + 1).text);
 
   for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
@@ -245,6 +247,7 @@ export function collectLivePreviewDecorations(
     const text = line.text;
     const trimmed = text.trim();
     const isActiveLine = options.activeLineNumber === lineNumber;
+    const revealSource = (options.revealActiveSource ?? true) && isActiveLine;
 
     const parsedTable = inCodeBlock ? null : parseMarkdownTable(sourceLines, lineNumber - 1);
     if (parsedTable) {
@@ -253,7 +256,7 @@ export function collectLivePreviewDecorations(
         options.activeLineNumber != null &&
         options.activeLineNumber >= lineNumber &&
         options.activeLineNumber <= lastTableLineNumber;
-      if (!activeLineInTable) {
+      if (!(revealEnabled && activeLineInTable)) {
         ranges.push({
           kind: 'table',
           from: line.from,
@@ -268,13 +271,13 @@ export function collectLivePreviewDecorations(
     const fence = text.match(/^```([a-zA-Z0-9_-]+)?\s*$/);
     if (fence) {
       const isOpeningFence = !inCodeBlock;
-      if (!isActiveLine) {
-        ranges.push({
-          kind: 'codeFence',
-          from: line.from,
-          to: line.from,
-          className: `cm-live-code-fence ${isOpeningFence ? 'cm-live-code-fence-open' : 'cm-live-code-fence-close'}`,
-        });
+      ranges.push({
+        kind: 'codeFence',
+        from: line.from,
+        to: line.from,
+        className: `cm-live-code-fence ${isOpeningFence ? 'cm-live-code-fence-open' : 'cm-live-code-fence-close'}`,
+      });
+      if (!revealSource) {
         ranges.push({
           kind: 'syntax',
           from: line.from,
@@ -287,19 +290,17 @@ export function collectLivePreviewDecorations(
     }
 
     if (inCodeBlock) {
-      if (!isActiveLine) {
-        ranges.push({
-          kind: 'codeFence',
-          from: line.from,
-          to: line.from,
-          className: 'cm-live-code-line',
-        });
-      }
+      ranges.push({
+        kind: 'codeFence',
+        from: line.from,
+        to: line.from,
+        className: 'cm-live-code-line',
+      });
       continue;
     }
 
     const heading = text.match(/^(#{1,6})\s+(.*)$/);
-    if (heading && !isActiveLine) {
+    if (heading) {
       const level = heading[1].length;
       ranges.push({
         kind: 'heading',
@@ -307,36 +308,40 @@ export function collectLivePreviewDecorations(
         to: line.from,
         className: `cm-live-heading cm-live-heading-${level}`,
       });
-      ranges.push({
-        kind: 'syntax',
-        from: line.from,
-        to: line.from + level + 1,
-        className: 'cm-live-syntax',
-      });
-      addInlineSyntaxMarks(heading[2] ?? '', line.from + level + 1, ranges);
+      if (!revealSource) {
+        ranges.push({
+          kind: 'syntax',
+          from: line.from,
+          to: line.from + level + 1,
+          className: 'cm-live-syntax',
+        });
+        addInlineSyntaxMarks(heading[2] ?? '', line.from + level + 1, ranges);
+      }
       continue;
     }
 
-    if (/^>\s?/.test(text) && !isActiveLine) {
+    if (/^>\s?/.test(text)) {
       ranges.push({
         kind: 'blockquote',
         from: line.from,
         to: line.from,
         className: 'cm-live-blockquote',
       });
-      const markerLength = text.startsWith('> ') ? 2 : 1;
-      ranges.push({
-        kind: 'syntax',
-        from: line.from,
-        to: line.from + markerLength,
-        className: 'cm-live-syntax',
-      });
-      addInlineSyntaxMarks(text.slice(markerLength), line.from + markerLength, ranges);
+      if (!revealSource) {
+        const markerLength = text.startsWith('> ') ? 2 : 1;
+        ranges.push({
+          kind: 'syntax',
+          from: line.from,
+          to: line.from + markerLength,
+          className: 'cm-live-syntax',
+        });
+        addInlineSyntaxMarks(text.slice(markerLength), line.from + markerLength, ranges);
+      }
       continue;
     }
 
     const list = text.match(/^(\s*)([-*+]|(\d+)\.)\s+(.*)$/);
-    if (list && !isActiveLine) {
+    if (list) {
       const markerStart = line.from + (list[1]?.length ?? 0);
       const markerEnd = markerStart + (list[2]?.length ?? 0) + 1;
       ranges.push({
@@ -345,51 +350,55 @@ export function collectLivePreviewDecorations(
         to: line.from,
         className: list[3] ? 'cm-live-list cm-live-list-ordered' : 'cm-live-list cm-live-list-unordered',
       });
-      ranges.push({
-        kind: 'syntax',
-        from: markerStart,
-        to: markerEnd,
-        className: 'cm-live-list-marker',
-        source: list[3] ? `${list[3]}.` : '•',
-      });
-      const taskMarker = (list[4] ?? '').match(/^\[([ xX])\]\s+/);
-      if (taskMarker) {
+      if (!revealSource) {
         ranges.push({
           kind: 'syntax',
-          from: markerEnd,
-          to: markerEnd + taskMarker[0].length,
-          className: 'cm-live-task-marker',
-          source: taskMarker[1]?.toLowerCase() === 'x' ? '✓' : '',
+          from: markerStart,
+          to: markerEnd,
+          className: 'cm-live-list-marker',
+          source: list[3] ? `${list[3]}.` : '•',
         });
-        addInlineSyntaxMarks(
-          (list[4] ?? '').slice(taskMarker[0].length),
-          markerEnd + taskMarker[0].length,
-          ranges,
-        );
-      } else {
-        addInlineSyntaxMarks(list[4] ?? '', markerEnd, ranges);
+        const taskMarker = (list[4] ?? '').match(/^\[([ xX])\]\s+/);
+        if (taskMarker) {
+          ranges.push({
+            kind: 'syntax',
+            from: markerEnd,
+            to: markerEnd + taskMarker[0].length,
+            className: 'cm-live-task-marker',
+            source: taskMarker[1]?.toLowerCase() === 'x' ? '✓' : '',
+          });
+          addInlineSyntaxMarks(
+            (list[4] ?? '').slice(taskMarker[0].length),
+            markerEnd + taskMarker[0].length,
+            ranges,
+          );
+        } else {
+          addInlineSyntaxMarks(list[4] ?? '', markerEnd, ranges);
+        }
+        addImageWidgets(text, line.from, ranges, options);
       }
-      addImageWidgets(text, line.from, ranges, options);
       continue;
     }
 
-    if (/^([-*_])\1\1+\s*$/.test(trimmed) && !isActiveLine) {
+    if (/^([-*_])\1\1+\s*$/.test(trimmed)) {
       ranges.push({
         kind: 'hr',
         from: line.from,
         to: line.from,
         className: 'cm-live-hr',
       });
-      ranges.push({
-        kind: 'syntax',
-        from: line.from,
-        to: line.to,
-        className: 'cm-live-syntax',
-      });
+      if (!revealSource) {
+        ranges.push({
+          kind: 'syntax',
+          from: line.from,
+          to: line.to,
+          className: 'cm-live-syntax',
+        });
+      }
       continue;
     }
 
-    if (!isActiveLine) {
+    if (!revealSource) {
       addInlineSyntaxMarks(text, line.from, ranges);
       addImageWidgets(text, line.from, ranges, options);
     }

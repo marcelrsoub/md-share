@@ -419,8 +419,16 @@ export function PublicApp() {
   }
 
   const editable = isEditableShareStatus(currentStatus) && Boolean(displayName);
+  const disabledOverlayLabel = !displayName
+    ? 'Add a display name to join the live session and edit this note.'
+    : currentStatus === 'conflict'
+      ? 'Editing is paused while the owner resolves this note conflict.'
+      : `This share is ${shareStatusLabel(currentStatus).toLowerCase()} and read-only.`;
   const isKanbanNote = kanbanDocument.board !== null;
   const showKanbanBoard = isKanbanNote && workspaceMode === 'board';
+  const publicConnectionLabel = isEditableShareStatus(currentStatus) && !displayName
+    ? 'Choose a name to join'
+    : connectionLabel(connectionState, currentStatus);
   if (loading) {
     return (
       <div className="app-shell">
@@ -450,7 +458,11 @@ export function PublicApp() {
   }
 
   return (
-    <div className="app-shell app-shell-public">
+    <div
+      className="app-shell app-shell-public"
+      data-connection-state={connectionState}
+      data-join-state={displayName ? 'joined' : 'needed'}
+    >
       <header className="public-topbar panel">
         <CardContent className="panel-tight topbar-block">
           <div className="brand-lockup">
@@ -463,9 +475,13 @@ export function PublicApp() {
 
           <div className="topbar-controls">
             <div className="public-presence-row" aria-label="Collaboration status">
-              <span className={`status-pill ${connectionTone(connectionState, currentStatus)} public-connection-pill`}>
-                <Radio />
-                {connectionLabel(connectionState, currentStatus)}
+              <span
+                className={`status-pill ${connectionTone(connectionState, currentStatus)} public-connection-pill`}
+                aria-label={`Connection: ${publicConnectionLabel}`}
+                aria-live="polite"
+              >
+                {currentStatus === 'conflict' || connectionState === 'closed' ? <AlertTriangle /> : <Radio />}
+                {publicConnectionLabel}
               </span>
               <span className="presence-summary">
                 <UsersRound />
@@ -475,7 +491,7 @@ export function PublicApp() {
             <Button
               variant="icon"
               className="name-chip settings-button"
-              aria-label="Open settings"
+              aria-label={displayName ? `Display name: ${displayName}. Open settings` : 'Join this session and choose a display name'}
               title={displayName ? `Editing as ${displayName}` : 'Join this session'}
               onClick={() => setSettingsOpen(true)}
             >
@@ -539,9 +555,14 @@ export function PublicApp() {
       </Dialog>
 
       <main className="public-workspace">
-        <section className="workspace-panel public-editor-panel panel">
+        <section
+          className="workspace-panel public-editor-panel panel"
+          data-share-status={currentStatus}
+          data-editable={editable ? 'true' : 'false'}
+          data-editor-mode={isKanbanNote ? workspaceMode : 'document'}
+        >
           <div className="workspace-panel-header">
-            <CardTitle>{showKanbanBoard ? 'Board' : 'Editor'}</CardTitle>
+            <CardTitle>{showKanbanBoard ? 'Board' : isKanbanNote ? 'Source' : 'Document'}</CardTitle>
             <div className="public-editor-header-controls">
               {isKanbanNote ? (
                 <div className="public-editor-mode-toggle" role="group" aria-label="Kanban workspace mode">
@@ -589,7 +610,7 @@ export function PublicApp() {
               awareness={awarenessRef}
               editable={editable}
               className={`editor-host-public${editable ? '' : ' is-readonly'}`}
-              disabledOverlayLabel="This share is not editable right now."
+              disabledOverlayLabel={disabledOverlayLabel}
               resolveImageUrl={resolvePublicImageUrl}
             />
           )}
