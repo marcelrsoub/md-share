@@ -2,6 +2,7 @@ services:
   md-share:
     build: .
     container_name: md-share
+    restart: unless-stopped
     ports:
       - "3020:3020"
       - "3021:3021"

@@ -29,9 +29,9 @@ The admin view keeps the file tree, preview, and share controls in a single desk
 
 ![Admin dashboard showing the file tree, preview, and shared links](docs/readme/admin-view.png)
 
-The public view shows live collaboration with multiple cursors and a rendered preview beside the editor.
+The public view shows a live collaborative session where participants type directly in the rendered document, with named cursors for everyone present.
 
-![Public collaborative editor with three collaborators and visible cursors](docs/readme/public-collaboration.png)
+![Public collaborative editor with two collaborators and visible cursors](docs/readme/public-collaboration.png)
 
 ## Get started in minutes
 
