@@ -3,16 +3,10 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowUpCircle,
-  ChevronRight,
   Copy,
-  FileText,
-  Folder,
   Link2,
   MoreHorizontal,
-  RotateCcw,
-  Search,
   Settings2,
-  X,
 } from 'lucide-react';
 import type { AdminConfig, NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
 import { Button } from '../components/ui/button.js';
@@ -27,6 +21,9 @@ import { copyTextToClipboard } from '../shared/clipboard.js';
 import { setDocumentMetadata } from '../shared/document.js';
 import { fetchJson, formatBytes, formatTimestamp, shareStatusLabel, shortToken, statusTone } from '../shared/api.js';
 import { APP_VERSION, GITHUB_LATEST_RELEASE_URL, GITHUB_REPO_URL, GITHUB_UPDATE_GUIDE_URL } from '../shared/app-meta.js';
+import { FileBrowser } from './file-browser.js';
+import { buildFolderIndex, getNoteFolder, getSharedNoteIds } from './file-browser-model.js';
+import { useFileBrowser } from './use-file-browser.js';
 
 interface CreateShareResponse extends ShareSummary {}
 
@@ -191,24 +188,19 @@ export function formatRelativeDay(value: number, now = Date.now()): string {
   }).format(date);
 }
 
-function splitNoteName(name: string): { base: string; extension: string } {
-  return name.toLowerCase().endsWith('.md')
-    ? { base: name.slice(0, -3), extension: '.md' }
-    : { base: name, extension: '' };
-}
-
 export function AdminApp() {
   const [notes, setNotes] = useState<NoteSummary[]>([]);
   const [shares, setShares] = useState<ShareSummary[]>([]);
   const [adminConfig, setAdminConfig] = useState<AdminConfig | null>(null);
-  const [search, setSearch] = useState('');
-  const [folderFilter, setFolderFilter] = useState('all');
-  const [scope, setScope] = useState<'all' | 'shared'>('all');
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('note'));
+  const [hasLoadedNotes, setHasLoadedNotes] = useState(false);
+  const [notesError, setNotesError] = useState<string | null>(null);
+  const notesRequestId = useRef(0);
   const [selectedPreview, setSelectedPreview] = useState<NotePreview | null>(null);
+  const [failedPreviewId, setFailedPreviewId] = useState<string | null>(null);
+  const [previewRetryVersion, setPreviewRetryVersion] = useState(0);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [expiresSelection, setExpiresSelection] = useState('');
-  const [loadingNotes, setLoadingNotes] = useState(false);
+  const [loadingNotes, setLoadingNotes] = useState(true);
   const [creatingShare, setCreatingShare] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
@@ -219,41 +211,37 @@ export function AdminApp() {
   const [now, setNow] = useState(() => Date.now());
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [updateCheckComplete, setUpdateCheckComplete] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const detailTitleRef = useRef<HTMLHeadingElement | null>(null);
-  const focusSearchOnReturnRef = useRef(false);
 
-  const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
+  const folderIndex = useMemo(() => hasLoadedNotes ? buildFolderIndex(notes) : null, [hasLoadedNotes, notes]);
+  const navigation = useFileBrowser(folderIndex);
+  const selectedNote = notes.find((note) => note.id === navigation.noteId) ?? null;
+  const selectedNoteId = navigation.noteId;
   const screen: 'files' | 'share' = selectedNoteId ? 'share' : 'files';
-  const activeSharesByNote = useMemo(() => getActiveShareCounts(shares), [shares]);
-  const folderOptions = useMemo(() => collectFolderOptions(notes), [notes]);
-  const visibleNotes = useMemo(
-    () =>
-      notes.filter(
-        (note) =>
-          (folderFilter === 'all' || getNoteDirectory(note.relativePath) === folderFilter)
-          && (scope === 'all' || (activeSharesByNote[note.id] ?? 0) > 0),
-      ),
-    [activeSharesByNote, folderFilter, notes, scope],
-  );
+  const visiblePreview = selectedPreview?.id === selectedNoteId ? selectedPreview : null;
+  const sharedNoteIds = useMemo(() => getSharedNoteIds(shares), [shares]);
   const selectedShares = useMemo(
     () => shares.filter((share) => share.noteId === selectedNoteId),
     [selectedNoteId, shares],
   );
   const activeSelectedShares = selectedShares.filter((share) => share.status !== 'revoked');
   const revokedSelectedShares = selectedShares.filter((share) => share.status === 'revoked');
-  const filtersActive = search.trim() !== '' || folderFilter !== 'all' || scope !== 'all';
-
-  async function loadNotes(query = search): Promise<void> {
+  async function loadNotes(): Promise<void> {
+    const requestId = ++notesRequestId.current;
     setLoadingNotes(true);
+    setNotesError(null);
     try {
-      const params = query ? `?query=${encodeURIComponent(query)}` : '';
-      const result = await fetchJson<NoteSummary[]>(`/api/admin/notes${params}`);
+      const result = await fetchJson<NoteSummary[]>('/api/admin/notes');
+      if (requestId !== notesRequestId.current) return;
       setNotes(result);
+      setHasLoadedNotes(true);
     } catch (loadError) {
-      toast.error(loadError instanceof Error ? loadError.message : 'Failed to load notes');
+      if (requestId !== notesRequestId.current) return;
+      const message = loadError instanceof Error ? loadError.message : 'Failed to load notes';
+      setNotesError(message);
+      if (hasLoadedNotes) toast.error(message);
     } finally {
-      setLoadingNotes(false);
+      if (requestId === notesRequestId.current) setLoadingNotes(false);
     }
   }
 
@@ -280,13 +268,6 @@ export function AdminApp() {
   }
 
   useEffect(() => {
-    const handle = window.setTimeout(() => {
-      void loadNotes(search);
-    }, 180);
-    return () => window.clearTimeout(handle);
-  }, [search]);
-
-  useEffect(() => {
     void loadNotes();
     void loadShares();
     void loadConfig();
@@ -298,25 +279,10 @@ export function AdminApp() {
   }, []);
 
   useEffect(() => {
-    function restoreFromHistory(): void {
-      setSelectedNoteId(new URLSearchParams(window.location.search).get('note'));
-    }
-
-    window.addEventListener('popstate', restoreFromHistory);
-    return () => window.removeEventListener('popstate', restoreFromHistory);
-  }, []);
-
-  useEffect(() => {
     if (screen === 'share') {
       detailTitleRef.current?.focus();
-      return;
     }
-
-    if (focusSearchOnReturnRef.current) {
-      focusSearchOnReturnRef.current = false;
-      searchInputRef.current?.focus();
-    }
-  }, [screen]);
+  }, [screen, selectedNote?.id]);
 
   useEffect(() => {
     if (updateCheckComplete) {
@@ -361,15 +327,18 @@ export function AdminApp() {
   }, []);
 
   useEffect(() => {
-    if (!selectedNoteId) {
+    if (!navigation.noteId) {
       setSelectedPreview(null);
+      setFailedPreviewId(null);
       setLoadingPreview(false);
       return;
     }
 
     let cancelled = false;
     setLoadingPreview(true);
-    fetchJson<NotePreview>(`/api/admin/notes/${encodeURIComponent(selectedNoteId)}/preview`)
+    setSelectedPreview(null);
+    setFailedPreviewId(null);
+    fetchJson<NotePreview>(`/api/admin/notes/${encodeURIComponent(navigation.noteId)}/preview`)
       .then((preview) => {
         if (!cancelled) {
           setSelectedPreview(preview);
@@ -379,6 +348,7 @@ export function AdminApp() {
         if (!cancelled) {
           toast.error(previewError instanceof Error ? previewError.message : 'Failed to load preview');
           setSelectedPreview(null);
+          setFailedPreviewId(navigation.noteId);
         }
       })
       .finally(() => {
@@ -390,23 +360,23 @@ export function AdminApp() {
     return () => {
       cancelled = true;
     };
-  }, [selectedNoteId]);
+  }, [navigation.noteId, previewRetryVersion]);
 
-  function openNote(noteId: string): void {
-    setSelectedNoteId(noteId);
-    const url = new URL(window.location.href);
-    url.searchParams.set('note', noteId);
-    window.history.pushState(null, '', url);
+  function retryPreview(): void {
+    setFailedPreviewId(null);
+    setLoadingPreview(true);
+    setPreviewRetryVersion((version) => version + 1);
+  }
+
+  function openNote(noteId: string, savedSnapshot = navigation.snapshot): void {
+    const note = notes.find((item) => item.id === noteId);
+    if (!note) return;
+    navigation.openNote(noteId, savedSnapshot);
     window.scrollTo(0, 0);
   }
 
   function backToFiles(): void {
-    focusSearchOnReturnRef.current = true;
-    setSelectedNoteId(null);
-    const url = new URL(window.location.href);
-    url.searchParams.delete('note');
-    window.history.pushState(null, '', url);
-    window.scrollTo(0, 0);
+    navigation.returnFromNote(folderIndex);
   }
 
   async function createShare(): Promise<void> {
@@ -553,14 +523,6 @@ export function AdminApp() {
     }
   }
 
-  function resetFilters(): void {
-    setFolderFilter('all');
-    setScope('all');
-    if (search.trim()) {
-      setSearch('');
-    }
-  }
-
   return (
     <div className="app-shell app-shell-admin">
       <Toaster />
@@ -672,120 +634,36 @@ export function AdminApp() {
 
       {screen === 'files' ? (
         <main className="admin-files">
-          <div className="admin-files-head">
-            <h1>
-              Files <span className="admin-count">{visibleNotes.length}</span>
-            </h1>
-            <div className="admin-tools">
-              <label className="admin-search">
-                <Search aria-hidden="true" />
-                <Input
-                  ref={searchInputRef}
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search files"
-                  aria-label="Search files and folders"
-                />
-                {search ? (
-                  <button
-                    type="button"
-                    className="admin-search-clear"
-                    aria-label="Clear search"
-                    onClick={() => {
-                      setSearch('');
-                      searchInputRef.current?.focus();
-                    }}
-                  >
-                    <X />
-                  </button>
-                ) : null}
-              </label>
-              <label className="admin-folder-select">
-                <Folder aria-hidden="true" />
-                <select aria-label="Filter by folder" value={folderFilter} onChange={(event) => setFolderFilter(event.target.value)}>
-                  <option value="all">All folders</option>
-                  {folderOptions.map((folder) => (
-                    <option key={folder} value={folder}>
-                      {folder}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="admin-scope" role="group" aria-label="Filter by sharing status">
-                <button type="button" className={scope === 'all' ? 'is-active' : ''} aria-pressed={scope === 'all'} onClick={() => setScope('all')}>
-                  All
-                </button>
-                <button type="button" className={scope === 'shared' ? 'is-active' : ''} aria-pressed={scope === 'shared'} onClick={() => setScope('shared')}>
-                  Shared
-                </button>
-              </div>
-              <Button variant="icon" onClick={() => void refreshAll()} aria-label="Refresh files and links" title="Refresh">
-                <RotateCcw />
-              </Button>
-            </div>
-          </div>
-
-          {visibleNotes.length > 0 ? (
-            <div className="admin-file-list">
-              <div className="admin-file-head" aria-hidden="true">
-                <span />
-                <span>Name</span>
-                <span>Folder</span>
-                <span>Updated</span>
-                <span />
-              </div>
-              {visibleNotes.map((note) => {
-                const { base, extension } = splitNoteName(note.name);
-                const shareCount = activeSharesByNote[note.id] ?? 0;
-                return (
-                  <button
-                    key={note.id}
-                    type="button"
-                    className="admin-file-row"
-                    onClick={() => openNote(note.id)}
-                    aria-label={`Preview ${note.name}${shareCount > 0 ? ` (${shareCount} active ${shareCount === 1 ? 'link' : 'links'})` : ''}`}
-                  >
-                    <span className="admin-file-icon" aria-hidden="true">
-                      <FileText />
-                    </span>
-                    <span className="admin-file-name">
-                      {base}
-                      {extension ? <span className="admin-file-ext">{extension}</span> : null}
-                      <span className="admin-file-mobile-folder">{getNoteDirectory(note.relativePath)}</span>
-                    </span>
-                    <span className="admin-file-folder">{getNoteDirectory(note.relativePath)}</span>
-                    <span className="admin-file-updated">{formatRelativeDay(note.modifiedAt, now)}</span>
-                    <span className="admin-file-end">
-                      {shareCount > 0 ? (
-                        <span className="admin-file-shared" aria-hidden="true" title={`${shareCount} active ${shareCount === 1 ? 'link' : 'links'}`}>
-                          <Link2 />
-                        </span>
-                      ) : null}
-                      <ChevronRight aria-hidden="true" />
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="admin-empty" role="status">
-              <Search aria-hidden="true" />
-              <h2>{notes.length === 0 ? getNoteListEmptyState(search).title : 'No files match these filters'}</h2>
-              <p>
-                {notes.length === 0
-                  ? getNoteListEmptyState(search).description
-                  : 'Try a different folder or reset the filters.'}
-              </p>
-              {filtersActive && notes.length > 0 ? (
-                <Button variant="ghost" onClick={resetFilters}>
-                  Reset filters
-                </Button>
-              ) : null}
-            </div>
-          )}
-
-          {loadingNotes && notes.length === 0 ? <p className="admin-muted admin-loading">Loading files…</p> : null}
+          <FileBrowser
+            index={folderIndex ?? buildFolderIndex([])}
+            folder={navigation.folder}
+            query={navigation.query}
+            searchScope={navigation.searchScope}
+            filter={navigation.filter}
+            sharedNoteIds={sharedNoteIds}
+            expandedFolders={navigation.expandedFolders}
+            onFolder={navigation.setFolder}
+            onQuery={navigation.setQuery}
+            onSearchScope={navigation.setSearchScope}
+            onFilter={navigation.setFilter}
+            onExpandedFolders={navigation.setExpandedFolders}
+            onOpenNote={(note, savedSnapshot) => openNote(note.id, savedSnapshot)}
+            onRefresh={() => void refreshAll()}
+            onBack={navigation.back}
+            onForward={navigation.forward}
+            canBack={navigation.canBack}
+            canForward={navigation.canForward}
+            loading={loadingNotes}
+            loadError={notesError}
+            hasLoaded={hasLoadedNotes}
+            onRetry={() => void loadNotes()}
+            scrollTop={navigation.snapshot.scrollTop}
+            onScrollTop={(scrollTop) => navigation.updateSnapshot({ scrollTop })}
+            focusKey={navigation.snapshot.focusedKey}
+            restoreFocus={navigation.restoreAfterPop}
+            onRestoreComplete={navigation.completeRestore}
+            formatDateRelative={formatRelativeDay}
+          />
         </main>
       ) : (
         <main className="admin-detail">
@@ -804,32 +682,33 @@ export function AdminApp() {
                   {selectedNote.name}
                 </h1>
                 <p>
-                  <span>{getNoteDirectory(selectedNote.relativePath)}</span>
+                  <span>{getNoteFolder(selectedNote) || 'Vault'}</span>
                   <span aria-hidden="true">·</span>
-                  <span>Updated {formatRelativeDay(selectedPreview?.modifiedAt ?? selectedNote.modifiedAt, now)}</span>
+                  <span>Updated {formatRelativeDay(visiblePreview?.modifiedAt ?? selectedNote.modifiedAt, now)}</span>
                   <span aria-hidden="true">·</span>
-                  <span>{formatBytes(selectedPreview?.size ?? selectedNote.size)}</span>
+                  <span>{formatBytes(visiblePreview?.size ?? selectedNote.size)}</span>
                 </p>
               </div>
 
               <div className="admin-detail-grid">
                 <section className="admin-preview" aria-label={`Preview of ${selectedNote.name}`}>
-                  {loadingPreview ? <p className="admin-muted">Loading preview…</p> : null}
-                  {!loadingPreview && selectedPreview ? (
+                  {loadingPreview || (!visiblePreview && failedPreviewId !== selectedNoteId) ? <p className="admin-muted">Loading preview…</p> : null}
+                  {!loadingPreview && visiblePreview ? (
                     <MarkdownEditor
-                      content={selectedPreview.content || selectedPreview.excerpt || ''}
+                      content={visiblePreview.content || visiblePreview.excerpt || ''}
                       editable={false}
                       className="editor-host-admin-preview is-readonly"
                       staticPreview
                       resolveImageUrl={(source) =>
-                        resolveMarkdownImageSource(source, (localSource) => buildAdminAssetUrl(selectedPreview.id, localSource))
+                        resolveMarkdownImageSource(source, (localSource) => buildAdminAssetUrl(visiblePreview.id, localSource))
                       }
                     />
                   ) : null}
-                  {!loadingPreview && !selectedPreview ? (
+                  {!loadingPreview && !visiblePreview && failedPreviewId === selectedNoteId ? (
                     <div className="admin-empty" role="status">
                       <h2>Preview unavailable</h2>
                       <p>The selected Markdown file could not be previewed.</p>
+                      <Button variant="ghost" onClick={retryPreview}>Retry preview</Button>
                     </div>
                   ) : null}
                 </section>
@@ -930,8 +809,14 @@ export function AdminApp() {
                 </aside>
               </div>
             </>
-          ) : loadingNotes ? (
-            <p className="admin-muted admin-loading">Loading file…</p>
+          ) : !hasLoadedNotes && loadingNotes ? (
+            <p className="admin-muted admin-loading">Loading library…</p>
+          ) : !hasLoadedNotes && notesError ? (
+            <div className="admin-empty" role="alert">
+              <h2>Library unavailable</h2>
+              <p>{notesError}</p>
+              <Button variant="ghost" onClick={() => void loadNotes()}>Retry</Button>
+            </div>
           ) : (
             <div className="admin-empty" role="status">
               <h2>File unavailable</h2>
