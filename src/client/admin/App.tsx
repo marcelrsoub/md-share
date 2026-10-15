@@ -1,26 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowUpCircle,
-  Ban,
-  Copy,
-  Download,
   ChevronRight,
-  Clock3,
+  Copy,
   FileText,
   Folder,
-  FolderOpen,
   Link2,
+  MoreHorizontal,
   RotateCcw,
   Search,
   Settings2,
-  ShieldCheck,
+  X,
 } from 'lucide-react';
 import type { AdminConfig, NotePreview, NoteSummary, ShareSummary } from '../../shared/types.js';
-import { Badge } from '../components/ui/badge.js';
 import { Button } from '../components/ui/button.js';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu.js';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card.js';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog.js';
 import { Input } from '../components/ui/input.js';
 import { Separator } from '../components/ui/separator.js';
@@ -123,10 +119,6 @@ export function parseExpirySelection(selection: string): number | null {
   return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
 }
 
-function getExpirySelectionLabel(selection: string): string {
-  return EXPIRY_PRESETS.find((preset) => preset.value === selection)?.label ?? 'Never';
-}
-
 export function getNoteDirectory(relativePath: string): string {
   const separator = relativePath.lastIndexOf('/');
   return separator > 0 ? relativePath.slice(0, separator) : 'Root';
@@ -147,171 +139,62 @@ export function getNoteListEmptyState(query: string): { title: string; descripti
   };
 }
 
-interface FolderNode {
-  type: 'folder';
-  name: string;
-  path: string;
-  children: TreeNode[];
+export function collectFolderOptions(notes: NoteSummary[]): string[] {
+  const folders = new Set<string>();
+  for (const note of notes) {
+    folders.add(getNoteDirectory(note.relativePath));
+  }
+
+  return [...folders].sort((left, right) => {
+    if (left === 'Root') {
+      return -1;
+    }
+    if (right === 'Root') {
+      return 1;
+    }
+    return left.localeCompare(right);
+  });
 }
 
-interface NoteNode {
-  type: 'note';
-  note: NoteSummary;
+export function getActiveShareCounts(shares: ShareSummary[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const share of shares) {
+    if (share.status === 'revoked') {
+      continue;
+    }
+    counts[share.noteId] = (counts[share.noteId] ?? 0) + 1;
+  }
+  return counts;
 }
 
-type TreeNode = FolderNode | NoteNode;
-
-interface FolderBranch {
-  folders: Map<string, FolderBranch>;
-  notes: NoteSummary[];
-  path: string;
-  name: string;
-}
-
-export function buildNoteTree(notes: NoteSummary[]): TreeNode[] {
-  const root: FolderBranch = {
-    folders: new Map<string, FolderBranch>(),
-    notes: [],
-    path: '',
-    name: '',
+export function formatRelativeDay(value: number, now = Date.now()): string {
+  const startOfDay = (timestamp: number): number => {
+    const date = new Date(timestamp);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
   };
 
-  for (const note of notes) {
-    const parts = note.relativePath.split('/');
-    let branch = root;
-
-    for (const segment of parts.slice(0, -1)) {
-      const nextPath = branch.path ? `${branch.path}/${segment}` : segment;
-      let next = branch.folders.get(segment);
-      if (!next) {
-        next = {
-          folders: new Map<string, FolderBranch>(),
-          notes: [],
-          path: nextPath,
-          name: segment,
-        };
-        branch.folders.set(segment, next);
-      }
-      branch = next;
-    }
-
-    branch.notes.push(note);
+  const dayDifference = Math.round((startOfDay(now) - startOfDay(value)) / 86_400_000);
+  if (dayDifference <= 0) {
+    return 'Today';
+  }
+  if (dayDifference === 1) {
+    return 'Yesterday';
   }
 
-  function toNodes(branch: FolderBranch): TreeNode[] {
-    const folders = Array.from(branch.folders.values())
-      .sort((left, right) => left.path.localeCompare(right.path))
-      .map<TreeNode>((folder) => ({
-        type: 'folder',
-        name: folder.name,
-        path: folder.path,
-        children: toNodes(folder),
-      }));
-
-    const notes = [...branch.notes]
-      .sort((left, right) => left.relativePath.localeCompare(right.relativePath))
-      .map<TreeNode>((note) => ({
-        type: 'note',
-        note,
-      }));
-
-    return [...folders, ...notes];
-  }
-
-  return toNodes(root);
+  const date = new Date(value);
+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  }).format(date);
 }
 
-export function getFolderAncestors(relativePath: string): string[] {
-  const segments = relativePath.split('/').filter(Boolean);
-
-  if (segments.length <= 1) {
-    return [];
-  }
-
-  const ancestors: string[] = [];
-
-  for (let index = 0; index < segments.length - 1; index += 1) {
-    ancestors.push(segments.slice(0, index + 1).join('/'));
-  }
-
-  return ancestors;
-}
-
-interface TreeNodeViewProps {
-  node: TreeNode;
-  depth: number;
-  expandedFolders: Set<string>;
-  onToggleFolder: (path: string) => void;
-  onSelect: (noteId: string) => void;
-  selectedNoteId: string | null;
-}
-
-function TreeNodeView({
-  node,
-  depth,
-  expandedFolders,
-  onToggleFolder,
-  onSelect,
-  selectedNoteId,
-}: TreeNodeViewProps) {
-  if (node.type === 'folder') {
-    const isExpanded = expandedFolders.has(node.path);
-
-    return (
-      <div className="nav-group">
-        <button
-          type="button"
-          className={`nav-row nav-folder${isExpanded ? ' is-expanded' : ''}`}
-          onClick={() => onToggleFolder(node.path)}
-          aria-expanded={isExpanded}
-          title={node.path}
-          style={{ paddingLeft: `${0.42 + depth * 0.48}rem` }}
-        >
-          <span className="nav-toggle">
-            <ChevronRight />
-          </span>
-          <span className="nav-icon">
-            {isExpanded ? <FolderOpen /> : <Folder />}
-          </span>
-          <span className="nav-folder-name">{node.name}</span>
-        </button>
-
-        {isExpanded ? (
-          <div className="nav-children">
-            {node.children.map((child) => (
-              <TreeNodeView
-                key={child.type === 'folder' ? child.path : child.note.id}
-                node={child}
-                depth={depth + 1}
-                expandedFolders={expandedFolders}
-                onToggleFolder={onToggleFolder}
-                onSelect={onSelect}
-                selectedNoteId={selectedNoteId}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  const isSelected = node.note.id === selectedNoteId;
-
-  return (
-    <button
-      type="button"
-      className={`nav-row nav-note${isSelected ? ' is-selected' : ''}`}
-      onClick={() => onSelect(node.note.id)}
-      title={node.note.relativePath}
-      style={{ paddingLeft: `${0.42 + depth * 0.48}rem` }}
-    >
-      <span className="nav-toggle nav-toggle-spacer" aria-hidden="true" />
-          <span className="nav-icon">
-            <FileText />
-      </span>
-      <span className="nav-note-label">{node.note.name}</span>
-    </button>
-  );
+function splitNoteName(name: string): { base: string; extension: string } {
+  return name.toLowerCase().endsWith('.md')
+    ? { base: name.slice(0, -3), extension: '.md' }
+    : { base: name, extension: '' };
 }
 
 export function AdminApp() {
@@ -319,15 +202,16 @@ export function AdminApp() {
   const [shares, setShares] = useState<ShareSummary[]>([]);
   const [adminConfig, setAdminConfig] = useState<AdminConfig | null>(null);
   const [search, setSearch] = useState('');
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [folderFilter, setFolderFilter] = useState('all');
+  const [scope, setScope] = useState<'all' | 'shared'>('all');
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('note'));
   const [selectedPreview, setSelectedPreview] = useState<NotePreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [expiresSelection, setExpiresSelection] = useState('');
   const [loadingNotes, setLoadingNotes] = useState(false);
-  const [loadingShares, setLoadingShares] = useState(false);
-  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [creatingShare, setCreatingShare] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
+  const [loadingConfig, setLoadingConfig] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareBaseUrlDraft, setShareBaseUrlDraft] = useState('');
   const [conflictShare, setConflictShare] = useState<ShareSummary | null>(null);
@@ -335,12 +219,30 @@ export function AdminApp() {
   const [now, setNow] = useState(() => Date.now());
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [updateCheckComplete, setUpdateCheckComplete] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const detailTitleRef = useRef<HTMLHeadingElement | null>(null);
+  const focusSearchOnReturnRef = useRef(false);
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
-  const selectedNoteDirectory = selectedNote ? getNoteDirectory(selectedNote.relativePath) : null;
-  const tree = useMemo(() => buildNoteTree(notes), [notes]);
-  const selectedShares = shares.filter((share) => share.noteId === selectedNoteId);
-  const selectedExpiryLabel = useMemo(() => getExpirySelectionLabel(expiresSelection), [expiresSelection]);
+  const screen: 'files' | 'share' = selectedNoteId ? 'share' : 'files';
+  const activeSharesByNote = useMemo(() => getActiveShareCounts(shares), [shares]);
+  const folderOptions = useMemo(() => collectFolderOptions(notes), [notes]);
+  const visibleNotes = useMemo(
+    () =>
+      notes.filter(
+        (note) =>
+          (folderFilter === 'all' || getNoteDirectory(note.relativePath) === folderFilter)
+          && (scope === 'all' || (activeSharesByNote[note.id] ?? 0) > 0),
+      ),
+    [activeSharesByNote, folderFilter, notes, scope],
+  );
+  const selectedShares = useMemo(
+    () => shares.filter((share) => share.noteId === selectedNoteId),
+    [selectedNoteId, shares],
+  );
+  const activeSelectedShares = selectedShares.filter((share) => share.status !== 'revoked');
+  const revokedSelectedShares = selectedShares.filter((share) => share.status === 'revoked');
+  const filtersActive = search.trim() !== '' || folderFilter !== 'all' || scope !== 'all';
 
   async function loadNotes(query = search): Promise<void> {
     setLoadingNotes(true);
@@ -348,13 +250,6 @@ export function AdminApp() {
       const params = query ? `?query=${encodeURIComponent(query)}` : '';
       const result = await fetchJson<NoteSummary[]>(`/api/admin/notes${params}`);
       setNotes(result);
-      setSelectedNoteId((current) => {
-        if (current && result.some((note) => note.id === current)) {
-          return current;
-        }
-
-        return result[0]?.id ?? null;
-      });
     } catch (loadError) {
       toast.error(loadError instanceof Error ? loadError.message : 'Failed to load notes');
     } finally {
@@ -363,14 +258,11 @@ export function AdminApp() {
   }
 
   async function loadShares(): Promise<void> {
-    setLoadingShares(true);
     try {
       const result = await fetchJson<ShareSummary[]>('/api/admin/shares');
       setShares(result);
     } catch (loadError) {
-      toast.error(loadError instanceof Error ? loadError.message : 'Failed to load shares');
-    } finally {
-      setLoadingShares(false);
+      toast.error(loadError instanceof Error ? loadError.message : 'Failed to load share links');
     }
   }
 
@@ -404,6 +296,27 @@ export function AdminApp() {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    function restoreFromHistory(): void {
+      setSelectedNoteId(new URLSearchParams(window.location.search).get('note'));
+    }
+
+    window.addEventListener('popstate', restoreFromHistory);
+    return () => window.removeEventListener('popstate', restoreFromHistory);
+  }, []);
+
+  useEffect(() => {
+    if (screen === 'share') {
+      detailTitleRef.current?.focus();
+      return;
+    }
+
+    if (focusSearchOnReturnRef.current) {
+      focusSearchOnReturnRef.current = false;
+      searchInputRef.current?.focus();
+    }
+  }, [screen]);
 
   useEffect(() => {
     if (updateCheckComplete) {
@@ -479,41 +392,21 @@ export function AdminApp() {
     };
   }, [selectedNoteId]);
 
-  useEffect(() => {
-    if (!selectedNote) {
-      return;
-    }
+  function openNote(noteId: string): void {
+    setSelectedNoteId(noteId);
+    const url = new URL(window.location.href);
+    url.searchParams.set('note', noteId);
+    window.history.pushState(null, '', url);
+    window.scrollTo(0, 0);
+  }
 
-    const ancestors = getFolderAncestors(selectedNote.relativePath);
-    if (ancestors.length === 0) {
-      return;
-    }
-
-    setExpandedFolders((current) => {
-      const next = new Set(current);
-      let changed = false;
-
-      for (const ancestor of ancestors) {
-        if (!next.has(ancestor)) {
-          next.add(ancestor);
-          changed = true;
-        }
-      }
-
-      return changed ? next : current;
-    });
-  }, [selectedNote?.relativePath]);
-
-  function toggleFolder(path: string): void {
-    setExpandedFolders((current) => {
-      const next = new Set(current);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
+  function backToFiles(): void {
+    focusSearchOnReturnRef.current = true;
+    setSelectedNoteId(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('note');
+    window.history.pushState(null, '', url);
+    window.scrollTo(0, 0);
   }
 
   async function createShare(): Promise<void> {
@@ -522,6 +415,7 @@ export function AdminApp() {
       return;
     }
 
+    setCreatingShare(true);
     try {
       const expires = parseExpirySelection(expiresSelection);
       const payload = {
@@ -540,7 +434,9 @@ export function AdminApp() {
       });
       await loadShares();
     } catch (createError) {
-      toast.error(createError instanceof Error ? createError.message : 'Failed to create share');
+      toast.error(createError instanceof Error ? createError.message : 'Failed to create share link');
+    } finally {
+      setCreatingShare(false);
     }
   }
 
@@ -552,7 +448,7 @@ export function AdminApp() {
       toast.success(`Revoked ${shortToken(token)}`);
       await loadShares();
     } catch (revokeError) {
-      toast.error(revokeError instanceof Error ? revokeError.message : 'Failed to revoke share');
+      toast.error(revokeError instanceof Error ? revokeError.message : 'Failed to revoke share link');
     }
   }
 
@@ -610,7 +506,7 @@ export function AdminApp() {
   }
 
   async function refreshAll(): Promise<void> {
-    await Promise.all([loadNotes(), loadShares(), settingsOpen ? Promise.resolve() : loadConfig()]);
+    await Promise.all([loadNotes(), loadShares()]);
   }
 
   function openSettings(): void {
@@ -657,50 +553,49 @@ export function AdminApp() {
     }
   }
 
+  function resetFilters(): void {
+    setFolderFilter('all');
+    setScope('all');
+    if (search.trim()) {
+      setSearch('');
+    }
+  }
+
   return (
     <div className="app-shell app-shell-admin">
       <Toaster />
 
-      <Card className="admin-topbar">
-        <CardContent className="panel-tight topbar-block">
-          <div className="brand-lockup">
-            <img className="brand-logo" src="/logo-gpt-topbar.png" width="72" height="72" alt="" aria-hidden="true" />
-            <div className="brand-copy">
-              <CardTitle>MD Share</CardTitle>
-              <span className="topbar-context">Admin</span>
-            </div>
-          </div>
+      <header className="admin-topbar">
+        <div className="brand-lockup">
+          <img className="brand-logo" src="/logo-gpt-topbar.png" width="28" height="28" alt="" aria-hidden="true" />
+          <span className="admin-brand-name">MD Share</span>
+        </div>
 
-          <div className="topbar-controls">
-            <span className="workspace-status">
-              <ShieldCheck />
-              Admin only
-            </span>
-            {availableUpdate ? (
-              <a
-                className="update-pill"
-                href={availableUpdate.guideUrl}
-                target="_blank"
-                rel="noreferrer"
-                title={`Version ${availableUpdate.version} is available. Open the update guide.`}
-              >
-                <ArrowUpCircle />
-                <span>Update {availableUpdate.version}</span>
-              </a>
-            ) : null}
-            <Button variant="icon" onClick={openSettings} aria-label="Open settings" disabled={loadingConfig || !adminConfig}>
-              <Settings2 />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        <div className="admin-topbar-actions">
+          {availableUpdate ? (
+            <a
+              className="update-pill"
+              href={availableUpdate.guideUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={`Version ${availableUpdate.version} is available. Open the update guide.`}
+            >
+              <ArrowUpCircle />
+              <span>Update {availableUpdate.version}</span>
+            </a>
+          ) : null}
+          <Button variant="icon" onClick={openSettings} aria-label="Open settings" title="Settings" disabled={loadingConfig || !adminConfig}>
+            <Settings2 />
+          </Button>
+        </div>
+      </header>
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent>
           <DialogHeader>
             <div>
-              <DialogTitle id="admin-settings-title">Shared link settings</DialogTitle>
-              <DialogDescription>Base URL for copied links.</DialogDescription>
+              <DialogTitle id="admin-settings-title">Settings</DialogTitle>
+              <DialogDescription>Base URL for copied share links.</DialogDescription>
             </div>
             <DialogClose />
           </DialogHeader>
@@ -726,9 +621,9 @@ export function AdminApp() {
               <div className="settings-dialog-version-group">
                 <span className="settings-dialog-version">Version {APP_VERSION}</span>
                 {availableUpdate ? (
-                  <Badge variant="outline" className="settings-dialog-update-badge">
+                  <span className="update-badge">
                     Update available
-                  </Badge>
+                  </span>
                 ) : null}
               </div>
               <a className="settings-dialog-github" href={availableUpdate?.guideUrl ?? GITHUB_REPO_URL} target="_blank" rel="noreferrer">
@@ -755,7 +650,7 @@ export function AdminApp() {
           <DialogHeader>
             <DialogTitle>Resolve file conflict</DialogTitle>
             <DialogDescription>
-              The NAS file changed while this shared link had edits. No file was overwritten. Choose which version should become the note.
+              The source file changed while this link had edits. No file was overwritten. Choose which version should become the note.
             </DialogDescription>
             <DialogClose disabled={resolvingConflict} />
           </DialogHeader>
@@ -775,119 +670,152 @@ export function AdminApp() {
         </DialogContent>
       </Dialog>
 
-      <div className="page-grid admin-layout">
-        <Card className="admin-sidebar panel-tight">
-          <CardHeader className="sidebar-header">
-            <div className="sidebar-header-copy">
-              <CardTitle>Files</CardTitle>
-              <span className="muted">{loadingNotes ? 'Refreshing...' : `${notes.length} results`}</span>
-            </div>
-            <p className="panel-helper">Choose a note to preview it and create a share link.</p>
-            <div className="navigator-controls">
-              <label className="command-search" htmlFor="search-notes">
-                <span className="command-icon">
-                  <Search />
-                </span>
+      {screen === 'files' ? (
+        <main className="admin-files">
+          <div className="admin-files-head">
+            <h1>
+              Files <span className="admin-count">{visibleNotes.length}</span>
+            </h1>
+            <div className="admin-tools">
+              <label className="admin-search">
+                <Search aria-hidden="true" />
                 <Input
-                  id="search-notes"
+                  ref={searchInputRef}
                   type="search"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search notes"
+                  placeholder="Search files"
+                  aria-label="Search files and folders"
                 />
+                {search ? (
+                  <button
+                    type="button"
+                    className="admin-search-clear"
+                    aria-label="Clear search"
+                    onClick={() => {
+                      setSearch('');
+                      searchInputRef.current?.focus();
+                    }}
+                  >
+                    <X />
+                  </button>
+                ) : null}
               </label>
-
-              <Button variant="icon" onClick={() => void refreshAll()} aria-label="Refresh notes, shares, and settings">
+              <label className="admin-folder-select">
+                <Folder aria-hidden="true" />
+                <select aria-label="Filter by folder" value={folderFilter} onChange={(event) => setFolderFilter(event.target.value)}>
+                  <option value="all">All folders</option>
+                  {folderOptions.map((folder) => (
+                    <option key={folder} value={folder}>
+                      {folder}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="admin-scope" role="group" aria-label="Filter by sharing status">
+                <button type="button" className={scope === 'all' ? 'is-active' : ''} aria-pressed={scope === 'all'} onClick={() => setScope('all')}>
+                  All
+                </button>
+                <button type="button" className={scope === 'shared' ? 'is-active' : ''} aria-pressed={scope === 'shared'} onClick={() => setScope('shared')}>
+                  Shared
+                </button>
+              </div>
+              <Button variant="icon" onClick={() => void refreshAll()} aria-label="Refresh files and links" title="Refresh">
                 <RotateCcw />
               </Button>
             </div>
-          </CardHeader>
-
-          <div className="admin-nav-scroll">
-            {notes.length > 0 ? (
-              <div className="nav-tree">
-                {tree.map((node) => (
-                  <TreeNodeView
-                    key={node.type === 'folder' ? node.path : node.note.id}
-                    node={node}
-                    depth={0}
-                    expandedFolders={expandedFolders}
-                    onToggleFolder={toggleFolder}
-                    onSelect={setSelectedNoteId}
-                    selectedNoteId={selectedNoteId}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className={`empty-state muted admin-files-empty${search.trim() ? ' is-search-empty' : ' is-library-empty'}`} role="status">
-                <span className="empty-state-title">{getNoteListEmptyState(search).title}</span>
-                <span className="empty-state-copy">{getNoteListEmptyState(search).description}</span>
-              </div>
-            )}
           </div>
-        </Card>
 
-        <main className="admin-main">
-          <Card className="admin-workbench panel-tight">
-            <div className="workbench-toolbar">
-              <div className="command-selection workbench-selection">
-                <span className="admin-selection-label">{selectedNote ? 'Selected Markdown file' : 'File preview'}</span>
-                <CardTitle className="workbench-selection-path mono admin-selected-file">
-                  {selectedNote?.name ?? 'No file selected'}
-                </CardTitle>
-                {selectedNote ? (
-                  <span className="admin-selected-location">
-                    {selectedNoteDirectory === 'Root' ? 'Root folder' : selectedNoteDirectory}
-                  </span>
-                ) : null}
+          {visibleNotes.length > 0 ? (
+            <div className="admin-file-list">
+              <div className="admin-file-head" aria-hidden="true">
+                <span />
+                <span>Name</span>
+                <span>Folder</span>
+                <span>Updated</span>
+                <span />
               </div>
-
-              <div className="workbench-actions">
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="button-ghost expires-trigger admin-expiry-trigger" aria-label="Select share expiry">
-                    <Clock3 />
-                    <span className="expires-trigger-label">Expires</span>
-                    <span className="expires-trigger-value">{selectedExpiryLabel}</span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" sideOffset={10}>
-                    {EXPIRY_PRESETS.map((preset) => (
-                      <DropdownMenuItem
-                        key={preset.value || 'never'}
-                        checked={preset.value === expiresSelection}
-                        onClick={() => setExpiresSelection(preset.value)}
-                      >
-                        {preset.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <Button className="admin-create-share" onClick={() => void createShare()} disabled={!selectedNote}>
-                  <Link2 />
-                  <span>Create share</span>
-                </Button>
-              </div>
+              {visibleNotes.map((note) => {
+                const { base, extension } = splitNoteName(note.name);
+                const shareCount = activeSharesByNote[note.id] ?? 0;
+                return (
+                  <button
+                    key={note.id}
+                    type="button"
+                    className="admin-file-row"
+                    onClick={() => openNote(note.id)}
+                    aria-label={`Preview ${note.name}${shareCount > 0 ? ` (${shareCount} active ${shareCount === 1 ? 'link' : 'links'})` : ''}`}
+                  >
+                    <span className="admin-file-icon" aria-hidden="true">
+                      <FileText />
+                    </span>
+                    <span className="admin-file-name">
+                      {base}
+                      {extension ? <span className="admin-file-ext">{extension}</span> : null}
+                      <span className="admin-file-mobile-folder">{getNoteDirectory(note.relativePath)}</span>
+                    </span>
+                    <span className="admin-file-folder">{getNoteDirectory(note.relativePath)}</span>
+                    <span className="admin-file-updated">{formatRelativeDay(note.modifiedAt, now)}</span>
+                    <span className="admin-file-end">
+                      {shareCount > 0 ? (
+                        <span className="admin-file-shared" aria-hidden="true" title={`${shareCount} active ${shareCount === 1 ? 'link' : 'links'}`}>
+                          <Link2 />
+                        </span>
+                      ) : null}
+                      <ChevronRight aria-hidden="true" />
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+          ) : (
+            <div className="admin-empty" role="status">
+              <Search aria-hidden="true" />
+              <h2>{notes.length === 0 ? getNoteListEmptyState(search).title : 'No files match these filters'}</h2>
+              <p>
+                {notes.length === 0
+                  ? getNoteListEmptyState(search).description
+                  : 'Try a different folder or reset the filters.'}
+              </p>
+              {filtersActive && notes.length > 0 ? (
+                <Button variant="ghost" onClick={resetFilters}>
+                  Reset filters
+                </Button>
+              ) : null}
+            </div>
+          )}
 
-            <div className="workbench-grid">
-              <section className="workbench-section preview-panel">
-                <CardHeader className="preview-head workbench-section-head">
-                  <div>
-                    <CardTitle>Preview</CardTitle>
-                    <CardDescription>Read-only view of the selected Markdown file.</CardDescription>
-                  </div>
-                  {selectedPreview ? (
-                    <div className="preview-meta muted">
-                      <span>{formatTimestamp(selectedPreview.modifiedAt)}</span>
-                      <Separator orientation="vertical" />
-                      <span>{formatBytes(selectedPreview.size)}</span>
-                    </div>
-                  ) : null}
-                </CardHeader>
+          {loadingNotes && notes.length === 0 ? <p className="admin-muted admin-loading">Loading files…</p> : null}
+        </main>
+      ) : (
+        <main className="admin-detail">
+          <div className="admin-detail-bar">
+            <button type="button" className="admin-back" onClick={backToFiles}>
+              <ArrowLeft />
+              <span>Files</span>
+            </button>
+            <span className="admin-detail-chip">Preview</span>
+          </div>
 
-                <div className="preview-sheet preview-editor-sheet">
-                  {loadingPreview ? <p className="muted">Loading preview...</p> : null}
-                  {!loadingPreview && selectedNote && selectedPreview ? (
+          {selectedNote ? (
+            <>
+              <div className="admin-detail-head">
+                <h1 ref={detailTitleRef} tabIndex={-1}>
+                  {selectedNote.name}
+                </h1>
+                <p>
+                  <span>{getNoteDirectory(selectedNote.relativePath)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Updated {formatRelativeDay(selectedPreview?.modifiedAt ?? selectedNote.modifiedAt, now)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{formatBytes(selectedPreview?.size ?? selectedNote.size)}</span>
+                </p>
+              </div>
+
+              <div className="admin-detail-grid">
+                <section className="admin-preview" aria-label={`Preview of ${selectedNote.name}`}>
+                  {loadingPreview ? <p className="admin-muted">Loading preview…</p> : null}
+                  {!loadingPreview && selectedPreview ? (
                     <MarkdownEditor
                       content={selectedPreview.content || selectedPreview.excerpt || ''}
                       editable={false}
@@ -899,96 +827,122 @@ export function AdminApp() {
                     />
                   ) : null}
                   {!loadingPreview && !selectedPreview ? (
-                    <div className="empty-state muted admin-preview-empty" role="status">
-                      <span className="empty-state-title">{selectedNote ? 'Preview unavailable' : 'No file selected'}</span>
-                      <span className="empty-state-copy">
-                        {selectedNote
-                          ? 'The selected Markdown file could not be previewed.'
-                          : 'Choose a Markdown file from Files to preview its content.'}
-                      </span>
+                    <div className="admin-empty" role="status">
+                      <h2>Preview unavailable</h2>
+                      <p>The selected Markdown file could not be previewed.</p>
                     </div>
                   ) : null}
-                </div>
-              </section>
+                </section>
 
-              <section className="workbench-section shares-panel">
-                <CardHeader className="preview-head workbench-section-head">
-                  <div>
-                    <CardTitle>{selectedNote ? `Share links (${selectedShares.length})` : `Share links (${shares.length})`}</CardTitle>
-                    <CardDescription>
-                      {selectedNote ? 'Private links for this file.' : 'All private share links. Select a file to filter by note.'}
-                    </CardDescription>
+                <aside className="admin-share" aria-label={`Share links for ${selectedNote.name}`}>
+                  <h2 className="admin-share-title">Share</h2>
+
+                  <label className="admin-field">
+                    <span>Expires</span>
+                    <select aria-label="Link expiry" value={expiresSelection} onChange={(event) => setExpiresSelection(event.target.value)}>
+                      {EXPIRY_PRESETS.map((preset) => (
+                        <option key={preset.value || 'never'} value={preset.value}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <Button className="admin-create" onClick={() => void createShare()} disabled={creatingShare}>
+                    <Link2 />
+                    <span>{creatingShare ? 'Creating…' : 'Create link'}</span>
+                  </Button>
+
+                  <div className="admin-links-head">
+                    <h3>Links</h3>
+                    <span className="admin-count">{activeSelectedShares.length}</span>
                   </div>
-                </CardHeader>
 
-                <div className="share-list-compact">
-                  {(selectedNote ? selectedShares : shares).map((share) => (
-                    <article
-                      key={share.token}
-                      className={`share-row-compact${share.status === 'revoked' ? ' is-revoked' : ''}${share.status === 'conflict' ? ' is-conflict' : ''}`}
-                      role="group"
-                      aria-label={`${share.noteName}, ${shareStatusLabel(share.status)}`}
-                    >
-                      <div className="share-row-copy">
-                        <div className="share-row-title">
-                          <strong>{share.noteName}</strong>
-                          <Badge variant="outline" className={`tone-${statusTone(share.status)}`}>
-                            {shareStatusLabel(share.status)}
-                          </Badge>
-                        </div>
-                        <div className="share-row-meta">
-                          <span className="muted mono share-row-token">{shortToken(share.token)}</span>
-                          <span className="share-row-expiry">{formatShareExpiry(share.expiresAt, now)}</span>
-                        </div>
-                        {share.status === 'conflict' ? (
-                          <div className="share-row-conflict-copy">
-                            <AlertTriangle aria-hidden="true" />
-                            <span><strong>File conflict.</strong> The source changed. Choose a version to continue.</span>
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div className="share-row-actions">
-                        <Button variant="icon" title="Copy share link" onClick={() => void copyLink(share.shareUrl)} aria-label={`Copy share link for ${share.noteName}`} disabled={share.status === 'revoked'}>
+                  {activeSelectedShares.map((share) => (
+                    <article key={share.token} className={`admin-link is-${share.status}`}>
+                      <div className="admin-link-top">
+                        <span className={`admin-dot tone-${statusTone(share.status)}`} aria-hidden="true" />
+                        <span className="admin-link-status">{shareStatusLabel(share.status)}</span>
+                        <button
+                          type="button"
+                          className="admin-icon-btn"
+                          title="Copy link"
+                          aria-label={`Copy share link ${shortToken(share.token)}`}
+                          disabled={share.status === 'revoked'}
+                          onClick={() => void copyLink(share.shareUrl)}
+                        >
                           <Copy />
-                        </Button>
-                        <Button
-                          variant={share.status === 'conflict' ? 'secondary' : 'icon'}
-                          onClick={() => (share.status === 'conflict' ? setConflictShare(share) : void exportShare(share.token))}
-                          title={share.status === 'conflict' ? 'Resolve file conflict' : 'Export note'}
-                          aria-label={share.status === 'conflict' ? `Resolve file conflict for ${share.noteName}` : `Export ${share.noteName}`}
-                          disabled={share.status === 'revoked'}
-                        >
-                          {share.status === 'conflict' ? 'Resolve' : <Download />}
-                        </Button>
-                        <Button
-                          variant="icon"
-                          className="danger-button"
-                          onClick={() => void revokeShare(share.token)}
-                          title="Revoke share"
-                          aria-label={`Revoke share for ${share.noteName}`}
-                          disabled={share.status === 'revoked'}
-                        >
-                          <Ban />
-                        </Button>
+                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            className="admin-icon-btn admin-kebab"
+                            aria-label={`Options for share link ${shortToken(share.token)}`}
+                            title="Link options"
+                            showChevron={false}
+                          >
+                            <MoreHorizontal />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" sideOffset={6}>
+                            <DropdownMenuItem
+                              disabled={share.status === 'conflict'}
+                              onClick={() => void exportShare(share.token)}
+                            >
+                              Export edits
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="admin-menu-danger" onClick={() => void revokeShare(share.token)}>
+                              Revoke link
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
+
+                      {share.status === 'conflict' ? (
+                        <div className="admin-link-conflict">
+                          <span>
+                            <AlertTriangle aria-hidden="true" />
+                            The file changed on disk.
+                          </span>
+                          <Button variant="secondary" className="admin-resolve" onClick={() => setConflictShare(share)}>
+                            Resolve
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="admin-link-meta">{formatShareExpiry(share.expiresAt, now)}</p>
+                      )}
                     </article>
                   ))}
 
-                  {(selectedNote ? selectedShares : shares).length === 0 ? (
-                    <div className="empty-state muted admin-shares-empty" role="status">
-                      <span className="empty-state-title">{selectedNote ? 'No share links for this file' : 'No share links yet'}</span>
-                      <span className="empty-state-copy">
-                        {selectedNote ? 'Choose an expiry, then create a private link for this file.' : 'Select a file to create your first private link.'}
-                      </span>
-                    </div>
+                  {activeSelectedShares.length === 0 ? <p className="admin-muted admin-links-empty">No links yet.</p> : null}
+
+                  {revokedSelectedShares.length > 0 ? (
+                    <details className="admin-revoked">
+                      <summary>
+                        {revokedSelectedShares.length} revoked {revokedSelectedShares.length === 1 ? 'link' : 'links'}
+                      </summary>
+                      {revokedSelectedShares.map((share) => (
+                        <div key={share.token} className="admin-revoked-row">
+                          <span className="mono">{shortToken(share.token)}</span>
+                          <span>Revoked {formatTimestamp(share.revokedAt)}</span>
+                        </div>
+                      ))}
+                    </details>
                   ) : null}
-                </div>
-              </section>
+                </aside>
+              </div>
+            </>
+          ) : loadingNotes ? (
+            <p className="admin-muted admin-loading">Loading file…</p>
+          ) : (
+            <div className="admin-empty" role="status">
+              <h2>File unavailable</h2>
+              <p>This file is no longer in the notes folder.</p>
+              <Button variant="ghost" onClick={backToFiles}>
+                Back to files
+              </Button>
             </div>
-          </Card>
+          )}
         </main>
-      </div>
+      )}
     </div>
   );
 }

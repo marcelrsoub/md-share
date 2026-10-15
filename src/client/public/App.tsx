@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
-import { AlertTriangle, Radio, Settings2, UserRound, UsersRound } from 'lucide-react';
+import { AlertTriangle, Settings2, UserRound } from 'lucide-react';
 import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import type { PublicShareInfo } from '../../shared/types.js';
 import { Button } from '../components/ui/button.js';
@@ -46,13 +46,29 @@ function getPresenceTheme(seed: string): { color: string; colorLight: string } {
   };
 }
 
+function getAvatarStyle(seed: string): { background: string; color: string } {
+  const theme = getPresenceTheme(seed);
+  return { background: theme.colorLight, color: theme.color };
+}
+
+function createClientId(): string {
+  // crypto.randomUUID is only available in secure contexts; fall back for plain-HTTP self-hosting.
+  if (typeof window.crypto?.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function getPresenceId(): string {
   const stored = window.localStorage.getItem(CLIENT_ID_KEY);
   if (stored) {
     return stored;
   }
 
-  const generated = window.crypto.randomUUID();
+  const generated = createClientId();
   window.localStorage.setItem(CLIENT_ID_KEY, generated);
   return generated;
 }
@@ -80,7 +96,7 @@ function connectionLabel(state: 'idle' | 'connecting' | 'connected' | 'closed', 
     return shareStatusLabel(status);
   }
   if (state === 'connected') {
-    return 'Live and synced';
+    return 'Synced';
   }
   if (state === 'connecting' || state === 'idle') {
     return 'Connecting…';
@@ -463,44 +479,56 @@ export function PublicApp() {
       data-connection-state={connectionState}
       data-join-state={displayName ? 'joined' : 'needed'}
     >
-      <header className="public-topbar panel">
-        <CardContent className="panel-tight topbar-block">
-          <div className="brand-lockup">
-            <img className="brand-logo" src="/logo-gpt-topbar.png" width="72" height="72" alt="" aria-hidden="true" />
-            <div className="brand-copy">
-              <CardTitle>{info?.noteName ?? 'Shared note'}</CardTitle>
-              <span className="topbar-context">Shared Markdown note</span>
-            </div>
+      <header className="public-topbar">
+        <div className="brand-lockup">
+          <img className="brand-logo" src="/logo-gpt-topbar.png" width="28" height="28" alt="" aria-hidden="true" />
+          <div className="brand-copy">
+            <CardTitle>{info?.noteName ?? 'Shared note'}</CardTitle>
           </div>
+        </div>
 
-          <div className="topbar-controls">
-            <div className="public-presence-row" aria-label="Collaboration status">
-              <span
-                className={`status-pill ${connectionTone(connectionState, currentStatus)} public-connection-pill`}
-                aria-label={`Connection: ${publicConnectionLabel}`}
-                aria-live="polite"
-              >
-                {currentStatus === 'conflict' || connectionState === 'closed' ? <AlertTriangle /> : <Radio />}
-                {publicConnectionLabel}
-              </span>
-              <span className="presence-summary">
-                <UsersRound />
-                {participantNames.length > 1 ? `${participantNames.length} collaborators` : 'Just you'}
-              </span>
+        <div className="topbar-controls">
+          <span
+            className={`public-status ${connectionTone(connectionState, currentStatus)}`}
+            aria-label={`Connection: ${publicConnectionLabel}`}
+            aria-live="polite"
+          >
+            <span className="public-status-dot" aria-hidden="true" />
+            <span className="public-status-label">{publicConnectionLabel}</span>
+          </span>
+
+          {participantNames.length > 0 ? (
+            <div className="public-avatars" aria-label={`Participants: ${participantNames.join(', ')}`}>
+              {participantNames.slice(0, 3).map((participant, index) => (
+                <span
+                  key={`${participant}-${index}`}
+                  className="public-avatar"
+                  style={getAvatarStyle(participant)}
+                  aria-hidden="true"
+                >
+                  {participant.trim().charAt(0).toUpperCase() || '?'}
+                </span>
+              ))}
+              {participantNames.length > 3 ? (
+                <span className="public-avatar is-extra" aria-hidden="true">
+                  +{participantNames.length - 3}
+                </span>
+              ) : null}
             </div>
-            <Button
-              variant="icon"
-              className="name-chip settings-button"
-              aria-label={displayName ? `Display name: ${displayName}. Open settings` : 'Join this session and choose a display name'}
-              title={displayName ? `Editing as ${displayName}` : 'Join this session'}
-              onClick={() => setSettingsOpen(true)}
-            >
-              <UserRound />
-              <span>{displayName || 'Join session'}</span>
-              <Settings2 />
-            </Button>
-          </div>
-        </CardContent>
+          ) : null}
+
+          <Button
+            variant="icon"
+            className="name-chip settings-button"
+            aria-label={displayName ? `Display name: ${displayName}. Open settings` : 'Join this session and choose a display name'}
+            title={displayName ? `Editing as ${displayName}` : 'Join this session'}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <UserRound />
+            <span>{displayName || 'Join session'}</span>
+            <Settings2 />
+          </Button>
+        </div>
       </header>
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
@@ -556,37 +584,33 @@ export function PublicApp() {
 
       <main className="public-workspace">
         <section
-          className="workspace-panel public-editor-panel panel"
+          className="public-editor-panel"
           data-share-status={currentStatus}
           data-editable={editable ? 'true' : 'false'}
           data-editor-mode={isKanbanNote ? workspaceMode : 'document'}
         >
-          <div className="workspace-panel-header">
-            <CardTitle>{showKanbanBoard ? 'Board' : isKanbanNote ? 'Source' : 'Document'}</CardTitle>
-            <div className="public-editor-header-controls">
-              {isKanbanNote ? (
-                <div className="public-editor-mode-toggle" role="group" aria-label="Kanban workspace mode">
-                  <Button
-                    variant="ghost"
-                    className={workspaceMode === 'board' ? 'is-active' : ''}
-                    aria-pressed={workspaceMode === 'board'}
-                    onClick={() => setWorkspaceMode('board')}
-                  >
-                    Board
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className={workspaceMode === 'source' ? 'is-active' : ''}
-                    aria-pressed={workspaceMode === 'source'}
-                    onClick={() => setWorkspaceMode('source')}
-                  >
-                    Source
-                  </Button>
-                </div>
-              ) : null}
-              <span className="editor-session-label">{shareStatusLabel(currentStatus)}</span>
+          {isKanbanNote ? (
+            <div className="public-toolbar">
+              <div className="public-editor-mode-toggle" role="group" aria-label="Kanban workspace mode">
+                <Button
+                  variant="ghost"
+                  className={workspaceMode === 'board' ? 'is-active' : ''}
+                  aria-pressed={workspaceMode === 'board'}
+                  onClick={() => setWorkspaceMode('board')}
+                >
+                  Board
+                </Button>
+                <Button
+                  variant="ghost"
+                  className={workspaceMode === 'source' ? 'is-active' : ''}
+                  aria-pressed={workspaceMode === 'source'}
+                  onClick={() => setWorkspaceMode('source')}
+                >
+                  Source
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {currentStatus === 'conflict' ? (
             <div className="public-conflict-banner" role="alert">
@@ -617,9 +641,6 @@ export function PublicApp() {
 
           {!displayName ? (
             <div className="editor-join-hint" role="status">
-              <span className="editor-join-icon" aria-hidden="true">
-                <UserRound />
-              </span>
               <div>
                 <strong>Join the live session</strong>
                 <span>Choose a display name so collaborators know who is editing.</span>

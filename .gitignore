@@ -12,3 +12,5 @@ coverage
 md-share.obsidian.env
 .lavish/
 .vscode/
+@eaDir/
+.opencode/

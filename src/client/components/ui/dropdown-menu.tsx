@@ -45,7 +45,12 @@ export function DropdownMenu({ children }: DropdownMenuProps) {
   return <DropdownMenuContext.Provider value={value}>{children}</DropdownMenuContext.Provider>;
 }
 
-export function DropdownMenuTrigger({ children, className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+export function DropdownMenuTrigger({
+  children,
+  className,
+  showChevron = true,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { showChevron?: boolean }) {
   const { open, setOpen, triggerRef, contentId } = useDropdownMenuContext();
 
   return (
@@ -60,7 +65,7 @@ export function DropdownMenuTrigger({ children, className, ...props }: ButtonHTM
       {...props}
     >
       {children}
-      <ChevronDown aria-hidden="true" className="dropdown-trigger-icon" />
+      {showChevron ? <ChevronDown aria-hidden="true" className="dropdown-trigger-icon" /> : null}
     </button>
   );
 }
