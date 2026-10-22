@@ -4,6 +4,7 @@
   --font-sans: Inter, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   --font-display: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Code', 'Roboto Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  --editor-line-height: 1.8rem;
   --type-xs: 0.75rem;
   --type-sm: 0.8125rem;
   --type-md: 0.875rem;
@@ -644,7 +645,7 @@ img {
   max-width: 76ch;
   margin: 0 auto;
   font-size: 1rem;
-  line-height: 1.8rem;
+  line-height: var(--editor-line-height);
 }
 
 .editor-host-admin-preview {
@@ -716,7 +717,7 @@ img {
 
 .editor-host .cm-line {
   border-radius: 0;
-  line-height: 1.8rem;
+  line-height: var(--editor-line-height);
 }
 
 .editor-host .cm-live-syntax {
@@ -734,35 +735,76 @@ img {
   font-family: var(--font-sans);
   font-weight: 650;
   letter-spacing: -0.02em;
-  line-height: 1.8rem;
+  line-height: var(--editor-line-height);
 }
 
-.editor-host .cm-live-heading-1 {
-  font-size: 1.6rem;
+.editor-host .cm-live-heading-1,
+.markdown-heading.is-level-1 {
+  font-size: clamp(1.7em, 3.6vw, 2.3em);
+  line-height: 1.14;
+  font-family: var(--font-display);
+  font-weight: 650;
+  letter-spacing: -0.03em;
 }
 
-.editor-host .cm-live-heading-2 {
-  font-size: 1.4rem;
+.editor-host .cm-live-heading-2,
+.markdown-heading.is-level-2 {
+  font-size: clamp(1.35em, 2.6vw, 1.65em);
+  line-height: 1.2;
+  font-family: var(--font-display);
+  font-weight: 650;
+  letter-spacing: -0.03em;
 }
 
-.editor-host .cm-live-heading-3 {
-  font-size: 1.2rem;
+.editor-host .cm-live-heading-3,
+.markdown-heading.is-level-3 {
+  font-size: clamp(1.15em, 2vw, 1.3em);
+  line-height: 1.3;
 }
 
-.editor-host .cm-live-heading-4,
-.editor-host .cm-live-heading-5,
-.editor-host .cm-live-heading-6 {
-  font-size: 1.05rem;
-  line-height: 1.8rem;
+.editor-host :is(.cm-live-heading-4, .cm-live-heading-5, .cm-live-heading-6),
+.markdown-heading:is(.is-level-4, .is-level-5, .is-level-6) {
   color: var(--content-strong);
+  font-size: 1em;
+  line-height: 1.4;
+}
+
+.editor-host .cm-md-heading {
+  text-decoration: none;
+  font-weight: inherit;
+}
+
+/* Keep heading line boxes stable when hidden source markers are replaced by widget buffers. */
+.editor-host .cm-live-heading .cm-widgetBuffer {
+  vertical-align: top;
+}
+
+.editor-host .cm-live-blockquote,
+.markdown-blockquote {
+  border: 0;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--content);
 }
 
 .editor-host .cm-live-blockquote {
-  border-left: 3px solid color-mix(in srgb, var(--accent) 58%, transparent);
-  background: var(--accent-soft);
-  color: var(--content);
-  border-radius: 0;
-  line-height: 1.8rem;
+  padding-block: 0;
+  padding-inline: 1rem;
+  line-height: var(--editor-line-height);
+}
+
+.markdown-blockquote {
+  display: block;
+  padding: 0.15rem 1rem;
+  border-radius: var(--radius-xs) 0 0 var(--radius-xs);
+}
+
+.editor-host .cm-live-blockquote-first {
+  border-top-left-radius: var(--radius-xs);
+}
+
+.editor-host .cm-live-blockquote-last {
+  border-bottom-left-radius: var(--radius-xs);
 }
 
 .editor-host .cm-live-list {
@@ -775,7 +817,7 @@ img {
   margin-right: 0.35rem;
   color: var(--accent-strong);
   font-weight: 700;
-  line-height: 1.8rem;
+  line-height: var(--editor-line-height);
   text-align: right;
 }
 
@@ -799,9 +841,29 @@ img {
   opacity: 0.92;
 }
 
-.editor-host .cm-live-hr {
-  color: transparent;
-  background: var(--border);
+.editor-host .cm-live-hr-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  height: 1.8em;
+  line-height: 1.8em;
+  vertical-align: top;
+}
+
+.editor-host .cm-live-hr-line {
+  height: 1px;
+  flex: 1 1 auto;
+  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+}
+
+.editor-host .cm-live-hr-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.72;
 }
 
 .editor-host .cm-live-code-fence {
@@ -813,6 +875,22 @@ img {
   font-family: var(--font-mono);
   font-size: 0.86rem;
   line-height: 1.8rem;
+}
+
+.editor-host .cm-live-code-language {
+  display: inline-block;
+  padding: 0 0.45rem;
+  border: 1px solid var(--code-border);
+  border-radius: 999px;
+  background: var(--code-bg-soft);
+  color: var(--code-comment);
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .editor-host .cm-live-code-fence-open {
@@ -934,6 +1012,136 @@ img {
   padding: 0.65rem 0 0.9rem;
 }
 
+/* Inline formatting and structure share these styles across public/admin editors. */
+.editor-host .cm-live-strong { font-weight: 700; }
+.editor-host .cm-live-em { font-style: italic; }
+.editor-host .cm-live-strike { color: var(--muted); opacity: 0.78; text-decoration: line-through; }
+.editor-host .cm-live-highlight,
+.markdown-highlight {
+  border-radius: 0.18em;
+  background: color-mix(in srgb, var(--action) 32%, transparent);
+  color: inherit;
+}
+
+.editor-host .cm-live-inline-code,
+.editor-host .cm-md-inline-code,
+.markdown-inline-code {
+  padding-inline: 0.24em;
+  box-shadow: inset 0 0 0 1px var(--code-border);
+  border-radius: var(--radius-xs);
+  background: var(--code-bg-soft);
+  color: var(--code-text);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.editor-host .cm-live-link {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link) 48%, transparent);
+  text-underline-offset: 0.18em;
+}
+
+.editor-host .cm-live-link[data-external="true"]::after {
+  content: "↗";
+  display: inline-block;
+  margin-left: 0.25em;
+  color: var(--link);
+  font-size: 0.75em;
+  line-height: 1;
+  opacity: 0.7;
+  user-select: none;
+}
+
+.editor-host .cm-live-link[data-external="false"]::after { content: none; }
+.editor-host .cm-md-link { color: var(--link); }
+.editor-host .cm-md-url,
+.editor-host .cm-md-mark { color: var(--muted); }
+.editor-host .cm-md-mark { color: var(--muted); opacity: 0.68; }
+
+.editor-host .cm-live-task-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: 0.5rem;
+  vertical-align: -0.1em;
+  line-height: 1;
+}
+
+.editor-host .cm-live-task-checkbox {
+  display: inline-grid;
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--accent-foreground);
+  font: inherit;
+  line-height: 1;
+  vertical-align: -0.1em;
+  cursor: pointer;
+}
+
+.editor-host .cm-live-task-checkbox:hover:not(.is-readonly) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.editor-host .cm-live-task-checkbox:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.editor-host .cm-live-task-checkbox-icon { visibility: hidden; display: block; width: 0.72em; height: 0.72em; font-size: 0.72em; font-weight: 800; }
+.editor-host .cm-live-task-checkbox.is-checked { border-color: var(--accent); background: var(--accent); }
+.editor-host .cm-live-task-checkbox.is-checked .cm-live-task-checkbox-icon { visibility: visible; }
+.editor-host .cm-live-task-checkbox.is-readonly { pointer-events: none; opacity: 0.9; }
+.editor-host .cm-live-task-number { margin-right: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.editor-host .cm-live-task-checked { color: var(--muted); }
+
+.markdown-heading { text-decoration: none; }
+.markdown-hr {
+  width: 100%;
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+}
+
+.markdown-list li { padding-left: 0.1rem; }
+.markdown-list li.is-checked { color: var(--muted); }
+.markdown-list li::marker { color: var(--accent); font-weight: 700; }
+.markdown-list.is-unordered li.is-task { list-style: none; margin-left: -1.35rem; }
+.markdown-task-toggle {
+  position: relative;
+  display: inline-grid;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.5rem;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  vertical-align: -0.1em;
+}
+.markdown-task-toggle.is-checked { border-color: var(--accent); background: var(--accent); }
+.markdown-task-toggle.is-checked::after {
+  display: block;
+  width: 0.28em;
+  height: 0.5em;
+  border-right: 1.5px solid var(--accent-foreground);
+  border-bottom: 1.5px solid var(--accent-foreground);
+  content: "";
+  transform: translateY(-0.08em) rotate(45deg);
+}
+.markdown-task-checkbox {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: default;
+}
+.markdown-figure-caption { color: var(--muted); font-size: var(--type-sm); }
+
 .editor-host-public.is-readonly {
   opacity: 0.95;
 }
@@ -972,7 +1180,7 @@ img {
   display: grid;
   gap: 1rem;
   color: var(--text);
-  line-height: 1.75;
+  line-height: 1.8;
 }
 
 .markdown-empty {
@@ -984,30 +1192,6 @@ img {
   margin: 0;
 }
 
-.markdown-heading {
-  letter-spacing: 0;
-  line-height: 1.15;
-}
-
-.markdown-heading.is-level-1 {
-  font-size: clamp(2rem, 4vw, 3.25rem);
-}
-
-.markdown-heading.is-level-2 {
-  font-size: clamp(1.5rem, 3vw, 2.2rem);
-}
-
-.markdown-heading.is-level-3 {
-  font-size: clamp(1.2rem, 2.2vw, 1.6rem);
-}
-
-.markdown-heading.is-level-4,
-.markdown-heading.is-level-5,
-.markdown-heading.is-level-6 {
-  font-size: 1rem;
-  color: var(--content-strong);
-}
-
 .markdown-paragraph {
   color: var(--content);
 }
@@ -1017,37 +1201,19 @@ img {
 .markdown-list a {
   color: var(--link);
   text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link) 48%, transparent);
   text-underline-offset: 0.18em;
 }
 
-.markdown-link-icon {
-  width: 0.8em;
-  height: 0.8em;
-  margin-left: 0.35rem;
-  vertical-align: -0.08em;
-  opacity: 0.8;
-}
-
-.markdown-inline-code {
-  padding: 0.1rem 0.32rem;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--control-bg);
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
-
-.markdown-blockquote {
-  display: grid;
-  gap: 0.55rem;
-  padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-  background: var(--accent-soft);
-}
-
-.markdown-blockquote-icon {
-  color: var(--accent-strong);
+.markdown-preview a[target="_blank"]::after {
+  content: "↗";
+  display: inline-block;
+  margin-left: 0.25em;
+  color: var(--link);
+  font-size: 0.75em;
+  line-height: 1;
+  opacity: 0.7;
+  user-select: none;
 }
 
 .markdown-blockquote-body {
@@ -1059,18 +1225,11 @@ img {
   margin: 0;
 }
 
-.markdown-hr {
-  width: 100%;
-  height: 1px;
-  border: 0;
-  background: var(--border);
-}
-
 .markdown-list {
   margin: 0;
   padding-left: 1.35rem;
   display: grid;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 
 .markdown-list li {
@@ -1081,30 +1240,19 @@ img {
   margin-top: 0.35rem;
 }
 
-.markdown-task-checkbox {
-  width: 1rem;
-  height: 1rem;
-  margin: 0 0.45rem 0 0;
-  accent-color: var(--accent-strong);
-  vertical-align: -0.12rem;
-}
-
 .markdown-table-wrap {
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius);
   background: var(--control-bg);
 }
 
 .editor-host .cm-live-table {
   box-sizing: border-box;
   margin: 0;
-  padding: 0.65rem 0 0.9rem;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  padding: 0;
 }
 
 .markdown-table {
@@ -1118,8 +1266,8 @@ img {
 .markdown-table th,
 .markdown-table td {
   min-width: 8rem;
-  padding: 0.7rem 0.85rem;
-  border-right: 1px solid var(--border);
+  padding: 0.65rem 0.85rem;
+  border-right: 0;
   border-bottom: 1px solid var(--border);
   color: var(--content);
   text-align: left;
@@ -1131,7 +1279,13 @@ img {
   color: var(--text);
   background: var(--accent-soft);
   font-weight: 700;
+  border-bottom-color: var(--border-strong);
+  font-size: 0.78em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
+
+.markdown-table tbody tr + tr td { border-top: 1px solid var(--border); }
 
 .markdown-table tr:last-child td {
   border-bottom: 0;
@@ -1145,33 +1299,40 @@ img {
 .markdown-codeblock {
   margin: 0;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 12px;
   border: 1px solid var(--code-border);
   background: var(--code-bg);
 }
 
 .markdown-codebar {
   display: flex;
-  justify-content: flex-end;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--code-border);
-  background: var(--code-bg-soft);
+  align-items: center;
+  justify-content: flex-start;
+  min-height: var(--editor-line-height);
+  padding: 0 14px;
+  border-bottom: 0;
+  background: var(--code-bg);
 }
 
-.markdown-codebadge {
+.markdown-codebar .markdown-codebadge {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.55rem;
+  padding: 0 0.45rem;
   border-radius: 999px;
   border: 1px solid var(--code-border);
+  background: var(--code-bg-soft);
   color: var(--code-comment);
-  font-size: 0.74rem;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.35;
+  text-transform: uppercase;
 }
 
 .markdown-codebody {
   margin: 0;
-  padding: 18px 18px 20px;
+  padding: 0.55rem 14px 0.8rem;
   overflow-x: auto;
 }
 
@@ -1179,20 +1340,20 @@ img {
   display: block;
   color: var(--code-text);
   font-family: var(--font-mono);
-  font-size: 0.88rem;
-  line-height: 1.65;
+  font-size: 0.88em;
+  line-height: 2.05;
   white-space: pre;
 }
 
 .markdown-figure {
   margin: 0;
   display: grid;
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
 
 .markdown-image {
   display: block;
-  border-radius: 16px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--control-bg);
   max-width: 100%;
@@ -1210,6 +1371,7 @@ img {
   border: 1px dashed var(--border-strong);
   color: var(--muted);
   background: var(--control-bg);
+  font-size: 0.84rem;
 }
 
 .settings-backdrop {
@@ -1412,8 +1574,7 @@ img {
 
 .status-pill,
 .subtle-chip,
-.settings-input input,
-.markdown-codebadge {
+.settings-input input {
   font-size: var(--ui-label);
 }
 

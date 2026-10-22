@@ -1,5 +1,4 @@
 import { Fragment, type ReactNode, useMemo, useState } from 'react';
-import { ExternalLink, ImageOff, Quote, SquareTerminal } from 'lucide-react';
 import { resolveMarkdownImageSource } from '../shared/markdown-assets.js';
 import { parseMarkdownTable, type MarkdownTableData } from '../shared/markdown-table.js';
 
@@ -53,7 +52,6 @@ function MarkdownImage({ alt, source, title, resolveImageUrl }: MarkdownImagePro
   if (!resolvedSource || failed) {
     return (
       <span className="markdown-image-fallback">
-        <ImageOff />
         <span>{alt || source}</span>
       </span>
     );
@@ -70,26 +68,42 @@ function MarkdownImage({ alt, source, title, resolveImageUrl }: MarkdownImagePro
         decoding="async"
         onError={() => setFailed(true)}
       />
+      {alt || title ? <figcaption className="markdown-figure-caption">{alt || title}</figcaption> : null}
     </figure>
   );
 }
 
 function normalizeHref(href: string): string | null {
   const trimmed = href.trim();
-  if (!trimmed || /^javascript:/i.test(trimmed)) {
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) {
     return null;
   }
 
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
-    return /^(https?|mailto|tel):/i.test(trimmed) ? trimmed : null;
+  const schemeCandidate = trimmed.replace(/[\s\u0000-\u001f\u007f]/g, '');
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(schemeCandidate)) {
+    return /^(https?|mailto|tel):/i.test(schemeCandidate) ? trimmed : null;
   }
 
   return trimmed;
 }
 
 function findClosing(text: string, startIndex: number, delimiter: string): number {
-  const index = text.indexOf(delimiter, startIndex);
-  return index >= 0 ? index : -1;
+  let index = text.indexOf(delimiter, startIndex);
+  while (index >= 0) {
+    let precedingSlashes = 0;
+    for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) {
+      precedingSlashes += 1;
+    }
+    if (precedingSlashes % 2 === 0) {
+      return index;
+    }
+    index = text.indexOf(delimiter, index + delimiter.length);
+  }
+  return -1;
+}
+
+function isWordCharacter(value: string | undefined): boolean {
+  return value !== undefined && /[\p{L}\p{N}]/u.test(value);
 }
 
 function splitLinkParts(value: string): { source: string; title?: string } {
@@ -142,10 +156,16 @@ function renderInline(text: string, resolveImageUrl?: (source: string) => string
         const { source, title } = splitLinkParts(remainder.slice(openParen + 1, closeParen));
         const href = normalizeHref(source);
         if (href) {
+          const isInternal = href.startsWith('#');
           nodes.push(
-            <a key={`${prefix}-link-${cursor}`} href={href} title={title} target={href.startsWith('#') ? undefined : '_blank'} rel="noreferrer">
+            <a
+              key={`${prefix}-link-${cursor}`}
+              href={href}
+              title={title}
+              target={isInternal ? undefined : '_blank'}
+              rel={isInternal ? undefined : 'noreferrer'}
+            >
               {renderInline(label, resolveImageUrl, `${prefix}-link-label-${cursor}`)}
-              <ExternalLink className="markdown-link-icon" />
             </a>,
           );
           cursor += closeParen + 1;
@@ -154,31 +174,48 @@ function renderInline(text: string, resolveImageUrl?: (source: string) => string
       }
     }
 
-    if (remainder.startsWith('**')) {
-      const close = findClosing(text, cursor + 2, '**');
-      if (close >= 0) {
-        nodes.push(
-          <strong key={`${prefix}-strong-${cursor}`}>{renderInline(text.slice(cursor + 2, close), resolveImageUrl, `${prefix}-strong-${cursor}`)}</strong>,
-        );
-        cursor = close + 2;
-        continue;
-      }
+    const formatting = [
+      { delimiter: '~~', tag: 'del' as const },
+      { delimiter: '**', tag: 'strong' as const },
+      { delimiter: '__', tag: 'strong' as const },
+      { delimiter: '==', tag: 'mark' as const },
+      { delimiter: '*', tag: 'em' as const },
+      { delimiter: '_', tag: 'em' as const },
+    ];
+    let formatted = false;
+    for (const { delimiter, tag } of formatting) {
+      if (!remainder.startsWith(delimiter)) continue;
+      if ((delimiter === '_' || delimiter === '__') && isWordCharacter(text[cursor - 1])) continue;
+      const contentStart = cursor + delimiter.length;
+      const close = findClosing(text, contentStart, delimiter);
+      if (close <= contentStart) continue;
+      const beforeClose = text[close - 1];
+      const afterClose = text[close + delimiter.length];
+      if (delimiter.length === 1 && delimiter === '*' && remainder.startsWith('**')) continue;
+      if ((delimiter === '_' || delimiter === '__') && isWordCharacter(afterClose)) continue;
+      if (delimiter === '_' && (isWordCharacter(text[cursor - 1]) || isWordCharacter(afterClose))) continue;
+      if (/\s/.test(text[contentStart] ?? '') || /\s/.test(beforeClose ?? '')) continue;
+      const Tag = tag;
+      nodes.push(
+        <Tag
+          key={`${prefix}-${tag}-${cursor}`}
+          {...(tag === 'mark' ? { className: 'markdown-highlight' } : {})}
+        >
+          {renderInline(text.slice(contentStart, close), resolveImageUrl, `${prefix}-${tag}-${cursor}`)}
+        </Tag>,
+      );
+      cursor = close + delimiter.length;
+      formatted = true;
+      break;
     }
+    if (formatted) continue;
 
-    if (remainder.startsWith('*') && !remainder.startsWith('**')) {
-      const close = findClosing(text, cursor + 1, '*');
-      if (close >= 0) {
-        nodes.push(
-          <em key={`${prefix}-em-${cursor}`}>{renderInline(text.slice(cursor + 1, close), resolveImageUrl, `${prefix}-em-${cursor}`)}</em>,
-        );
-        cursor = close + 1;
-        continue;
-      }
-    }
-
+    /*
+     * Keep code spans opaque: Markdown syntax inside them is literal text.
+     */
     if (remainder.startsWith('`')) {
       const close = findClosing(text, cursor + 1, '`');
-      if (close >= 0) {
+      if (close > cursor + 1) {
         nodes.push(
           <code key={`${prefix}-code-${cursor}`} className="markdown-inline-code">
             {text.slice(cursor + 1, close)}
@@ -189,13 +226,16 @@ function renderInline(text: string, resolveImageUrl?: (source: string) => string
       }
     }
 
-    const nextSpecial = remainder.search(/(!\[|\[|\*\*|\*|`)/);
+    const nextSpecial = remainder.search(/(!\[|\[|\*\*|__|~~|==|\*|_|`)/);
     const end = nextSpecial === -1 ? text.length : cursor + nextSpecial;
     const chunk = text.slice(cursor, end);
     if (chunk) {
       nodes.push(<Fragment key={`${prefix}-text-${cursor}`}>{chunk}</Fragment>);
+      cursor = end;
+    } else {
+      nodes.push(<Fragment key={`${prefix}-text-${cursor}`}>{text[cursor]}</Fragment>);
+      cursor += 1;
     }
-    cursor = end > cursor ? end : cursor + 1;
   }
 
   return nodes;
@@ -394,18 +434,29 @@ function renderListBlock(
 ): ReactNode {
   const ListTag: 'ol' | 'ul' = block.ordered ? 'ol' : 'ul';
   return (
-    <ListTag className={`markdown-list ${block.ordered ? 'is-ordered' : 'is-unordered'}`}>
+    <ListTag key={prefix} className={`markdown-list ${block.ordered ? 'is-ordered' : 'is-unordered'}`}>
       {block.items.map((item, itemIndex) => (
-        <li key={`${prefix}-${itemIndex}`}>
+        <li
+          key={`${prefix}-${itemIndex}`}
+          className={
+            item.taskChecked !== undefined
+              ? ['is-task', item.taskChecked ? 'is-checked' : ''].filter(Boolean).join(' ')
+              : undefined
+          }
+        >
           {item.taskChecked !== undefined ? (
-            <input
-              className="markdown-task-checkbox"
-              type="checkbox"
-              checked={item.taskChecked}
-              disabled
-              aria-label={item.taskChecked ? 'Completed task' : 'Incomplete task'}
-              readOnly
-            />
+            <span
+              className={item.taskChecked ? 'markdown-task-toggle is-checked' : 'markdown-task-toggle'}
+            >
+              <input
+                className="markdown-task-checkbox"
+                type="checkbox"
+                checked={item.taskChecked}
+                disabled
+                aria-label={item.taskChecked ? 'Completed task' : 'Incomplete task'}
+                readOnly
+              />
+            </span>
           ) : null}
           {renderInline(item.text, resolveImageUrl, `${prefix}-${itemIndex}`)}
           {item.children.map((child, childIndex) =>
@@ -423,7 +474,7 @@ function renderTableBlock(
   prefix: string,
 ): ReactNode {
   return (
-    <div className="markdown-table-wrap">
+    <div key={prefix} className="markdown-table-wrap">
       <table className="markdown-table">
         <thead>
           <tr>
@@ -479,7 +530,6 @@ export function MarkdownPreview({ content, className, emptyLabel = 'Nothing to p
 
           return (
             <blockquote key={`blockquote-${blockIndex}`} className="markdown-blockquote">
-              <Quote className="markdown-blockquote-icon" />
               <div className="markdown-blockquote-body">
                 {paragraphs.length > 0 ? (
                   paragraphs.map((paragraph, paragraphIndex) => (
@@ -504,7 +554,6 @@ export function MarkdownPreview({ content, className, emptyLabel = 'Nothing to p
             <figure key={`code-${blockIndex}`} className="markdown-codeblock" data-language={block.language || undefined}>
               <figcaption className="markdown-codebar">
                 <span className="markdown-codebadge">
-                  <SquareTerminal />
                   <span>{block.language || 'code'}</span>
                 </span>
               </figcaption>

@@ -276,59 +276,24 @@ body:has(.app-shell-public),
   color: var(--content);
   font-family: var(--font-sans);
   font-size: 1rem;
-  line-height: 1.8;
+  line-height: var(--editor-line-height);
 }
 
 .app-shell-public .editor-host-public .cm-line {
   min-width: 0;
   border-radius: 0;
-  line-height: 1.8;
   overflow-wrap: anywhere;
 }
 
 .app-shell-public .editor-host-public .cm-line.cm-live-heading {
-  padding-block: 1.2rem 0.35rem;
+  padding-block: 0;
   color: var(--text);
   font-weight: 650;
   letter-spacing: -0.03em;
-  line-height: 1.2;
-}
-
-.app-shell-public .editor-host-public .cm-line.cm-live-heading-1 {
-  padding-top: 0.2rem;
-  font-size: clamp(1.7rem, 3.6vw, 2.3rem);
-  line-height: 1.14;
-}
-
-.app-shell-public .editor-host-public .cm-line.cm-live-heading-2 {
-  padding-top: 1.5rem;
-  font-size: clamp(1.35rem, 2.6vw, 1.65rem);
-  line-height: 1.2;
-}
-
-.app-shell-public .editor-host-public .cm-line.cm-live-heading-3 {
-  padding-top: 1.3rem;
-  font-size: clamp(1.15rem, 2vw, 1.3rem);
-  line-height: 1.3;
-}
-
-.app-shell-public .editor-host-public .cm-line:is(.cm-live-heading-4, .cm-live-heading-5, .cm-live-heading-6) {
-  padding-top: 1.1rem;
-  color: var(--content-strong);
-  font-size: 1rem;
-  line-height: 1.4;
 }
 
 .app-shell-public .editor-host-public .cm-live-syntax {
   color: var(--muted);
-}
-
-.app-shell-public .editor-host-public .cm-live-blockquote {
-  padding-block: 0.3em;
-  padding-inline: 1rem;
-  border-left: 2px solid var(--public-accent);
-  background: var(--accent-soft);
-  color: var(--content);
 }
 
 .app-shell-public .editor-host-public .cm-live-list {
@@ -340,32 +305,28 @@ body:has(.app-shell-public),
   color: var(--public-accent);
 }
 
-.app-shell-public .editor-host-public .cm-live-hr {
-  padding-block: 1.4rem;
-  background: var(--public-rule);
-  background-clip: content-box;
-}
+.app-shell-public .editor-host-public .cm-live-hr { background: transparent; }
 
-.app-shell-public .editor-host-public .cm-line.cm-activeLine.cm-live-hr {
-  color: var(--muted);
-  background: transparent;
+.app-shell-public .editor-host-public .cm-live-hr-widget {
+  height: 1.8em;
+  line-height: 1.8em;
 }
 
 .app-shell-public .editor-host-public :is(.tok-link, .tok-url) {
   color: var(--link);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--link) 48%, transparent);
   text-underline-offset: 0.18em;
 }
 
 .app-shell-public .editor-host-public .cm-live-code-line,
 .app-shell-public .editor-host-public .cm-live-code-fence {
   font-size: 0.88em;
-  line-height: 1.7;
+  line-height: var(--editor-line-height);
 }
 
 .app-shell-public .editor-host-public .cm-live-code-fence-open {
-  padding-top: 0.45rem;
+  padding-top: 0;
 }
 
 .app-shell-public .editor-host-public .cm-live-image {

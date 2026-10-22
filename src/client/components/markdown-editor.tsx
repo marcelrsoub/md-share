@@ -1,12 +1,39 @@
 import { useEffect, useRef } from 'react';
 import { basicSetup, EditorView } from 'codemirror';
 import { EditorState } from '@codemirror/state';
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { tags } from '@lezer/highlight';
 import { markdown } from '@codemirror/lang-markdown';
+import { GFM } from '@lezer/markdown';
 import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
 import { livePreview } from '../public/live-preview.js';
 import { resolveMarkdownCodeLanguage } from '../shared/code-languages.js';
+
+const markdownHighlightStyle = HighlightStyle.define([
+  { tag: tags.heading, class: 'cm-md-heading' },
+  { tag: tags.monospace, class: 'cm-md-inline-code' },
+  { tag: tags.processingInstruction, class: 'cm-md-mark' },
+  { tag: tags.link, class: 'cm-md-link' },
+  { tag: tags.url, class: 'cm-md-url' },
+  { tag: tags.comment, class: 'tok-comment' },
+  { tag: tags.meta, class: 'tok-meta' },
+  { tag: [tags.keyword, tags.atom, tags.bool, tags.literal, tags.number], class: 'tok-keyword' },
+  { tag: [tags.string, tags.special(tags.string)], class: 'tok-string' },
+  { tag: [tags.regexp, tags.escape], class: 'tok-string2' },
+  { tag: [tags.variableName, tags.local(tags.variableName), tags.special(tags.variableName)], class: 'tok-variableName' },
+  { tag: [tags.definition(tags.variableName), tags.definition(tags.propertyName)], class: 'tok-variableName2' },
+  { tag: tags.propertyName, class: 'tok-propertyName' },
+  { tag: [tags.typeName, tags.namespace], class: 'tok-typeName' },
+  { tag: tags.className, class: 'tok-className' },
+  { tag: tags.macroName, class: 'tok-macroName' },
+  { tag: tags.operator, class: 'tok-operator' },
+  { tag: tags.punctuation, class: 'tok-punctuation' },
+  { tag: tags.invalid, class: 'tok-invalid' },
+  { tag: tags.deleted, class: 'tok-deleted' },
+  { tag: tags.inserted, class: 'tok-inserted' },
+]);
 
 interface MarkdownEditorProps {
   content: string;
@@ -43,8 +70,9 @@ export function MarkdownEditor({
         doc: yText?.toString() ?? content,
         extensions: [
           basicSetup,
-          markdown({ codeLanguages: resolveMarkdownCodeLanguage }),
-          livePreview({ resolveImageUrl, revealActiveSource: !staticPreview }),
+          syntaxHighlighting(markdownHighlightStyle),
+          markdown({ codeLanguages: resolveMarkdownCodeLanguage, extensions: [GFM] }),
+          livePreview({ resolveImageUrl, revealActiveSource: !staticPreview, interactive: editable && !staticPreview }),
           ...(yText && awareness ? [yCollab(yText, awareness)] : []),
           EditorState.readOnly.of(!editable),
           EditorView.editable.of(editable),
